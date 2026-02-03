@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Metadata Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Main Image Area -->
+        <div class="main-content">
+            <div class="image-container">
+                <img id="mainImage" class="framed-image" src="" alt="Main Image" style="display: none;">
+                <div id="c2paVerification" class="c2pa-verification" style="display: none;">
+                    Verified
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>Image Metadata</h1>
+                <p id="filename">No image selected</p>
+            </div>
+            
+            <div class="sidebar-content">
+                <!-- Thumbnail Section -->
+                <div class="thumbnail-section">
+                    <div class="thumbnail-container">
+                        <span class="thumbnail-label">Source Image Thumbnail</span>
+                        <img id="sourceImage" class="thumbnail" src="" alt="Source Image Thumbnail" style="display: none;">
+                    </div>
+                </div>
+
+                <!-- Provenance Section -->
+                <div class="provenance-section">
+                    <h2>Provenance History</h2>
+                    <ul class="provenance-list" id="provenanceList">
+                        <!-- Will be populated by JavaScript -->
+                    </ul>
+                </div>
+
+                <!-- Photography Metadata Section -->
+                <div class="metadata-grid">
+                    <div class="metadata-section">
+                        <h2>Camera & Lens</h2>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Camera Make</span>
+                            <span class="metadata-value" id="cameraMake"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Camera Model</span>
+                            <span class="metadata-value" id="cameraModel"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Lens Model</span>
+                            <span class="metadata-value" id="lensModel"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Lens Serial No.</span>
+                            <span class="metadata-value" id="lensSerial"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Body Serial No.</span>
+                            <span class="metadata-value" id="bodySerial"></span>
+                        </div>
+                    </div>
+
+                    <div class="metadata-section">
+                        <h2>Exposure Settings</h2>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Aperture</span>
+                            <span class="metadata-value" id="aperture"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Shutter Speed</span>
+                            <span class="metadata-value" id="shutterSpeed"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">ISO Sensitivity</span>
+                            <span class="metadata-value" id="iso"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Focal Length</span>
+                            <span class="metadata-value" id="focalLength"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Exposure Mode</span>
+                            <span class="metadata-value" id="exposureMode"></span>
+                        </div>
+                    </div>
+
+                    <div class="metadata-section">
+                        <h2>Image Details</h2>
+                        <div class="metadata-item">
+                            <span class="metadata-label">File Format</span>
+                            <span class="metadata-value" id="format"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Resolution</span>
+                            <span class="metadata-value" id="resolution"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Dimensions</span>
+                            <span class="metadata-value" id="dimensions"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Color Space</span>
+                            <span class="metadata-value">sRGB</span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Software</span>
+                            <span class="metadata-value" id="software"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- IPTC & Description Section -->
+                <div class="description-section">
+                    <h2>Image Description & Information</h2>
+                    <p class="description" id="description"></p>
+                </div>
+
+                <!-- Additional Details -->
+                <div class="metadata-grid" style="margin-top: 1.5rem;">
+                    <div class="metadata-section">
+                        <h2>Photographer Information</h2>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Artist</span>
+                            <span class="metadata-value" id="artist"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Capture Date</span>
+                            <span class="metadata-value" id="dateOriginal"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Digitized Date</span>
+                            <span class="metadata-value" id="dateDigitized"></span>
+                        </div>
+                    </div>
+
+                    <div class="metadata-section">
+                        <h2>Advanced Settings</h2>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Max Aperture</span>
+                            <span class="metadata-value" id="maxAperture"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Metering Mode</span>
+                            <span class="metadata-value" id="meteringMode"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Flash</span>
+                            <span class="metadata-value" id="flash"></span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">White Balance</span>
+                            <span class="metadata-value" id="whiteBalance"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
