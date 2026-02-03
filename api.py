@@ -210,7 +210,19 @@ def extract_thumbnails():
         return jsonify({"error": str(e)}), 500
     finally:
         if temp_file and os.path.exists(temp_file):
-            os.unlink(temp_file)
+            try:
+                os.unlink(temp_file)
+            except Exception as e:
+                app.logger.error(f"Error cleaning up temp file: {e}")
+        
+        # Cleanup any residual thumbnail files
+        for fname in ['c2pa_claim_thumbnail.jpg', 'c2pa_ingredient_thumbnail.jpg', 'temp_image.jpg', 
+                     'thumbnail_0.jpg', 'thumbnail_1.jpg', 'thumbnail_2.jpg', 'thumbnail_3.jpg']:
+            if os.path.exists(fname):
+                try:
+                    os.unlink(fname)
+                except Exception as e:
+                    app.logger.error(f"Error cleaning up {fname}: {e}")
 
 @app.route('/')
 def index():

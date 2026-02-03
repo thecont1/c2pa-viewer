@@ -7,6 +7,7 @@ import struct
 import io
 import re
 import sys
+import os
 
 def extract_thumbnails(jpeg_path):
     """Extract C2PA thumbnails using pattern matching."""
@@ -58,6 +59,15 @@ if __name__ == "__main__":
         print("Usage: python extract_c2pa_thumbnails.py <image_path>")
         sys.exit(1)
     jpeg_path = sys.argv[1]
+    
+    # Cleanup any existing thumbnail files before processing
+    for fname in ['c2pa_claim_thumbnail.jpg', 'c2pa_ingredient_thumbnail.jpg', 
+                 'thumbnail_0.jpg', 'thumbnail_1.jpg', 'thumbnail_2.jpg', 'thumbnail_3.jpg']:
+        if os.path.exists(fname):
+            try:
+                os.unlink(fname)
+            except Exception as e:
+                print(f"Warning: Failed to delete {fname}: {e}")
     
     try:
         print("Extracting C2PA thumbnails...")

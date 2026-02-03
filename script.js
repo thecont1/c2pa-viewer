@@ -170,6 +170,11 @@ async function renderSourceThumbnail(uri) {
         
         const sourceLabel = document.querySelector('#sourceImage').previousElementSibling;
         sourceLabel.style.display = 'block';
+        
+        // Ensure thumbnail is centered within container
+        sourceImage.addEventListener('load', function() {
+            this.style.margin = '0 auto';
+        });
     } else {
         const sourceImage = document.getElementById('sourceImage');
         sourceImage.style.display = 'none';
