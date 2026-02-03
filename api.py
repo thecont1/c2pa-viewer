@@ -71,6 +71,10 @@ def extract_metadata(image_path):
         except:
             processed_exif[key] = str(value)
     
+    # Add file size in bytes and MB
+    file_size_bytes = os.path.getsize(image_path)
+    file_size_mb = round(file_size_bytes / (1024 * 1024), 2)
+    
     metadata = {
         os.path.basename(image_path): {
             "filename": os.path.basename(image_path),
@@ -78,6 +82,8 @@ def extract_metadata(image_path):
             "size": [width, height],
             "width": width,
             "height": height,
+            "file_size_bytes": file_size_bytes,
+            "file_size_mb": file_size_mb,
             "exif": processed_exif,
             "photography": {}
         }
@@ -91,9 +97,77 @@ def extract_metadata(image_path):
     if "LensModel" in processed_exif:
         img_meta["photography"]["lens_model"] = processed_exif["LensModel"]
     if "FNumber" in processed_exif:
-        img_meta["photography"]["aperture"] = f"f/{processed_exif['FNumber']}"
+        f_number = processed_exif['FNumber']
+        if f_number.is_integer():
+            img_meta["photography"]["aperture"] = f"f/{int(f_number)}"
+        else:
+            img_meta["photography"]["aperture"] = f"f/{f_number}"
     if "ExposureTime" in processed_exif:
-        img_meta["photography"]["shutter_speed"] = f"{processed_exif['ExposureTime']}s"
+        exposure_time = processed_exif['ExposureTime']
+        # Convert decimal to fraction
+        from fractions import Fraction
+        try:
+            # Handle very small exposure times like 0.0003125 (which is 1/3200)
+            if exposure_time > 0 and exposure_time < 1:
+                # Directly handle common shutter speeds
+                known_shutters = {
+                    0.0003125: '1/3200',
+                    0.0003: '1/3200',
+                    0.0004: '1/2500',
+                    0.0005: '1/2000',
+                    0.0006: '1/1600',
+                    0.0008: '1/1250',
+                    0.001: '1/1000',
+                    0.00125: '1/800',
+                    0.0016: '1/640',
+                    0.002: '1/500',
+                    0.0025: '1/400',
+                    0.003: '1/320',
+                    0.004: '1/250',
+                    0.005: '1/200',
+                    0.006: '1/160',
+                    0.008: '1/125',
+                    0.01: '1/100',
+                    0.0125: '1/80',
+                    0.016: '1/60',
+                    0.02: '1/50',
+                    0.025: '1/40',
+                    0.03: '1/30',
+                    0.04: '1/25',
+                    0.05: '1/20',
+                    0.06: '1/15',
+                    0.08: '1/13',
+                    0.1: '1/10',
+                    0.125: '1/8',
+                    0.16: '1/6',
+                    0.2: '1/5',
+                    0.25: '1/4',
+                    0.3: '1/3',
+                    0.4: '1/2.5',
+                    0.5: '1/2'
+                }
+                
+                # Find the closest known shutter speed
+                closest = min(known_shutters.keys(), key=lambda x: abs(x - exposure_time))
+                if abs(exposure_time - closest) < 0.0001:
+                    img_meta["photography"]["shutter_speed"] = f"{known_shutters[closest]}s"
+                else:
+                    # Fallback to fraction conversion
+                    f = Fraction(exposure_time).limit_denominator(10000)
+                    if f.denominator == 1:
+                        img_meta["photography"]["shutter_speed"] = f"{f.numerator}s"
+                    else:
+                        img_meta["photography"]["shutter_speed"] = f"{f.numerator}/{f.denominator}s"
+            elif exposure_time >= 1:
+                f = Fraction(exposure_time).limit_denominator(1000)
+                if f.denominator == 1:
+                    img_meta["photography"]["shutter_speed"] = f"{f.numerator}s"
+                else:
+                    img_meta["photography"]["shutter_speed"] = f"{f.numerator}/{f.denominator}s"
+            else:
+                img_meta["photography"]["shutter_speed"] = "Unknown"
+        except:
+            img_meta["photography"]["shutter_speed"] = f"{exposure_time}s"
     if "ISOSpeedRatings" in processed_exif:
         img_meta["photography"]["iso"] = processed_exif["ISOSpeedRatings"]
     if "FocalLength" in processed_exif:
@@ -104,6 +178,12 @@ def extract_metadata(image_path):
         img_meta["photography"]["artist"] = processed_exif["Artist"]
     if "ImageDescription" in processed_exif:
         img_meta["photography"]["description"] = processed_exif["ImageDescription"]
+    
+    # Add color space and profile info if available
+    if "ColorSpace" in processed_exif:
+        # ColorSpace values from EXIF standard: 0 = sRGB, 1 = Adobe RGB, etc.
+        color_space_map = {0: 'sRGB', 1: 'sRGB'}
+        img_meta["photography"]["color_space"] = color_space_map.get(processed_exif["ColorSpace"], str(processed_exif["ColorSpace"]))
     
     return metadata
 
@@ -120,8 +200,16 @@ def download_image_from_uri(uri, save_path="temp_image.jpg"):
             shutil.copy(local_path, save_path)
             return save_path, os.path.basename(local_path)
         
-        # Otherwise, download from URI
-        response = requests.get(uri, stream=True)
+        # Otherwise, download from URI with proper headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'image/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive'
+        }
+        
+        response = requests.get(uri, stream=True, headers=headers, timeout=10)
         response.raise_for_status()
         
         # Extract filename from URI
@@ -173,36 +261,15 @@ def extract_thumbnails():
         return jsonify({"error": "Failed to download image"}), 500
     
     try:
-        import subprocess
-        import sys
+        from extract_c2pa import extract_c2pa_thumbnails
+        claim_thumb, ingredient_thumb = extract_c2pa_thumbnails(temp_file)
         
-        # Use the existing extract_c2pa_thumbnails.py
-        result = subprocess.run([
-            sys.executable, 'extract_c2pa_thumbnails.py', 
-            temp_file
-        ], capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            app.logger.error(f"Error extracting thumbnails: {result.stderr}")
-            return jsonify({"error": "Failed to extract thumbnails"}), 500
-        
-        claim_thumb = None
-        ingredient_thumb = None
-        
-        claim_file = 'c2pa_claim_thumbnail.jpg'
-        ingredient_file = 'c2pa_ingredient_thumbnail.jpg'
-        
-        if os.path.exists(claim_file):
-            with open(claim_file, 'rb') as f:
-                claim_thumb = base64.b64encode(f.read()).decode('utf-8')
-        
-        if os.path.exists(ingredient_file):
-            with open(ingredient_file, 'rb') as f:
-                ingredient_thumb = base64.b64encode(f.read()).decode('utf-8')
+        claim_thumb_b64 = base64.b64encode(claim_thumb).decode('utf-8') if claim_thumb else None
+        ingredient_thumb_b64 = base64.b64encode(ingredient_thumb).decode('utf-8') if ingredient_thumb else None
         
         return jsonify({
-            "claim_thumbnail": claim_thumb,
-            "ingredient_thumbnail": ingredient_thumb
+            "claim_thumbnail": claim_thumb_b64,
+            "ingredient_thumbnail": ingredient_thumb_b64
         })
         
     except Exception as e:
@@ -223,6 +290,34 @@ def extract_thumbnails():
                     os.unlink(fname)
                 except Exception as e:
                     app.logger.error(f"Error cleaning up {fname}: {e}")
+
+@app.route('/api/c2pa_metadata', methods=['GET'])
+def get_c2pa_metadata():
+    """API endpoint to get detailed C2PA metadata including provenance."""
+    uri = request.args.get('uri')
+    
+    if not uri:
+        return jsonify({"error": "Image URI is required"}), 400
+    
+    temp_file, filename = download_image_from_uri(uri)
+    if not temp_file:
+        return jsonify({"error": "Failed to download image"}), 500
+    
+    try:
+        from extract_c2pa import extract_c2pa_metadata
+        provenance = extract_c2pa_metadata(temp_file)
+        
+        return jsonify({"provenance": provenance})
+        
+    except Exception as e:
+        app.logger.error(f"Error extracting C2PA metadata: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if temp_file and os.path.exists(temp_file):
+            try:
+                os.unlink(temp_file)
+            except Exception as e:
+                app.logger.error(f"Error cleaning up temp file: {e}")
 
 @app.route('/')
 def index():

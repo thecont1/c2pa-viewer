@@ -90,67 +90,140 @@ function hideLoading() {
 function renderPhotographyMetadata(metadata) {
     const photography = metadata.photography || {};
     
-    document.getElementById('cameraMake').textContent = photography.camera_make || 'Unknown';
-    document.getElementById('cameraModel').textContent = photography.camera_model || 'Unknown';
-    document.getElementById('lensModel').textContent = photography.lens_model || 'Unknown';
-    document.getElementById('aperture').textContent = photography.aperture || 'Unknown';
-    document.getElementById('shutterSpeed').textContent = photography.shutter_speed || 'Unknown';
-    document.getElementById('iso').textContent = photography.iso || 'Unknown';
-    document.getElementById('focalLength').textContent = photography.focal_length || 'Unknown';
-    document.getElementById('dateOriginal').textContent = photography.date_original || 'Unknown';
-    document.getElementById('artist').textContent = photography.artist || 'Unknown';
-    document.getElementById('description').textContent = photography.description || 'No description available';
+    setFullText('cameraMake', photography.camera_make || 'Unknown');
+    setFullText('cameraModel', photography.camera_model || 'Unknown');
+    setFullText('lensModel', photography.lens_model || 'Unknown');
+    setFullText('aperture', photography.aperture || 'Unknown');
+    setFullText('shutterSpeed', photography.shutter_speed || 'Unknown');
+    setFullText('iso', photography.iso || 'Unknown');
+    setFullText('focalLength', photography.focal_length || 'Unknown');
+    setFullText('dateOriginal', photography.date_original || 'Unknown');
+    setFullText('artist', photography.artist || 'Unknown');
+    setFullText('description', photography.description || 'No description available');
+    setFullText('colorSpace', photography.color_space || 'Unknown');
+}
+
+function setFullText(elementId, text) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    element.textContent = text;
+    element.classList.remove('tooltip');
+    element.removeAttribute('data-tooltip');
 }
 
 function renderExifMetadata(metadata) {
     const exif = metadata.exif || {};
     
-    document.getElementById('format').textContent = metadata.format || 'JPEG';
-    document.getElementById('resolution').textContent = 
+    setFullText('format', metadata.format || 'JPEG');
+    setFullText('resolution', 
         exif.XResolution && exif.YResolution 
             ? `${exif.XResolution} x ${exif.YResolution} DPI` 
-            : 'Unknown';
-    document.getElementById('dimensions').textContent = 
+            : 'Unknown');
+    setFullText('dimensions', 
         metadata.width && metadata.height 
             ? `${metadata.width} × ${metadata.height} pixels` 
-            : 'Unknown';
-    document.getElementById('software').textContent = exif.Software || 'Unknown';
-    document.getElementById('lensSerial').textContent = exif.LensSerialNumber || 'Unknown';
-    document.getElementById('bodySerial').textContent = exif.BodySerialNumber || 'Unknown';
-    document.getElementById('dateDigitized').textContent = exif.DateTimeDigitized || 'Unknown';
-    document.getElementById('maxAperture').textContent = 
-        exif.MaxApertureValue ? `f/${exif.MaxApertureValue}` : 'Unknown';
+            : 'Unknown');
+    setFullText('fileSize', 
+        metadata.file_size_bytes ? `${metadata.file_size_mb} MB (${metadata.file_size_bytes.toLocaleString()} bytes)` : 'Unknown');
+    setFullText('software', exif.Software || 'Unknown');
+    setFullText('lensSerial', exif.LensSerialNumber || 'Unknown');
+    setFullText('bodySerial', exif.BodySerialNumber || 'Unknown');
+    setFullText('dateDigitized', exif.DateTimeDigitized || 'Unknown');
+    setFullText('maxAperture', 
+        exif.MaxApertureValue ? `f/${exif.MaxApertureValue}` : 'Unknown');
     
-    document.getElementById('exposureMode').textContent = 
-        exif.ExposureMode !== undefined ? metadataMappings.exposureModes[exif.ExposureMode] || 'Unknown' : 'Unknown';
+    setFullText('exposureMode', 
+        exif.ExposureMode !== undefined ? metadataMappings.exposureModes[exif.ExposureMode] || 'Unknown' : 'Unknown');
     
-    document.getElementById('meteringMode').textContent = 
-        exif.MeteringMode !== undefined ? metadataMappings.meteringModes[exif.MeteringMode] || 'Unknown' : 'Unknown';
+    setFullText('meteringMode', 
+        exif.MeteringMode !== undefined ? metadataMappings.meteringModes[exif.MeteringMode] || 'Unknown' : 'Unknown');
     
-    document.getElementById('flash').textContent = 
-        exif.Flash !== undefined ? metadataMappings.flashStates[exif.Flash] || 'Unknown' : 'Unknown';
+    setFullText('flash', 
+        exif.Flash !== undefined ? metadataMappings.flashStates[exif.Flash] || 'Unknown' : 'Unknown');
     
-    document.getElementById('whiteBalance').textContent = 
-        exif.WhiteBalance !== undefined ? metadataMappings.whiteBalance[exif.WhiteBalance] || 'Unknown' : 'Unknown';
+    setFullText('whiteBalance', 
+        exif.WhiteBalance !== undefined ? metadataMappings.whiteBalance[exif.WhiteBalance] || 'Unknown' : 'Unknown');
+}
+
+async function loadC2PAMetadataFromApi(uri) {
+    try {
+        const response = await fetch(`http://localhost:8080/api/c2pa_metadata?uri=${encodeURIComponent(uri)}`);
+        if (!response.ok) {
+            return null;
+        }
+        const data = await response.json();
+        return data.provenance;
+    } catch (error) {
+        console.error('Error loading C2PA metadata:', error);
+        return null;
+    }
+}
+
+function renderC2PAMetadata(provenance) {
+    const provenanceSection = document.querySelector('.provenance-list');
+    
+    if (!provenance || provenance.length === 0) {
+        provenanceSection.innerHTML = `
+            <li class="provenance-item">
+                <strong>Provenance Information</strong>
+                <p>No detailed C2PA metadata available</p>
+            </li>
+        `;
+        return;
+    }
+    
+    let html = '';
+    
+    provenance.forEach((item, index) => {
+        html += `
+            <li class="provenance-item">
+                <strong>${item.name || `Step ${index + 1}`}</strong>
+        `;
+        
+        if (item.title) {
+            html += `<p>${item.title}</p>`;
+        }
+        
+        if (item.tool) {
+            html += `<p><em>Tool: ${item.tool}</em></p>`;
+        }
+        
+        if (item.parameters) {
+            html += `<p>Parameters: ${JSON.stringify(item.parameters)}</p>`;
+        }
+        
+        if (item.data) {
+            html += `<p>Data: ${item.data}</p>`;
+        }
+        
+        html += `</li>`;
+    });
+    
+    provenanceSection.innerHTML = html;
 }
 
 function renderProvenance(metadata) {
     const provenanceSection = document.querySelector('.provenance-list');
     provenanceSection.innerHTML = `
         <li class="provenance-item">
-            <strong>Ingredient Image:</strong> Source image embedded within C2PA metadata
+            <strong>Ingredient Image</strong>
+            <p>Source image embedded within C2PA metadata</p>
         </li>
         <li class="provenance-item">
-            <strong>Original Capture:</strong> Taken on <span class="highlight">${formatDate(metadata.photography?.date_original)}</span> with ${metadata.photography?.camera_make} ${metadata.photography?.camera_model}
+            <strong>Original Capture</strong>
+            <p>Taken on ${formatDate(metadata.photography?.date_original)} with ${metadata.photography?.camera_make} ${metadata.photography?.camera_model}</p>
         </li>
         <li class="provenance-item">
-            <strong>Post-processing:</strong> Edited in <span class="highlight">${metadata.exif?.Software}</span>
+            <strong>Post-processing</strong>
+            <p>Edited in ${metadata.exif?.Software}</p>
         </li>
         <li class="provenance-item">
-            <strong>Final Version:</strong> Saved on <span class="highlight">${formatDate(metadata.exif?.DateTime)}</span> as ${metadata.format} format
+            <strong>Final Version</strong>
+            <p>Saved on ${formatDate(metadata.exif?.DateTime)} as ${metadata.format} format</p>
         </li>
         <li class="provenance-item">
-            <strong>Verification:</strong> <span class="c2pa-verification" style="display: inline-flex;">✓ C2PA Verified</span>
+            <span class="c2pa-verification" style="display: inline-flex;">✓ C2PA Verified</span>
         </li>
     `;
 }
@@ -218,15 +291,28 @@ async function init() {
             mainImage.src = params.imageUri;
             mainImage.style.display = 'block';
             
-            const c2paVerification = document.getElementById('c2paVerification');
-            c2paVerification.style.display = 'flex';
+            // Check if C2PA verification container exists before accessing style
+            const c2paVerificationContainer = document.querySelector('.c2pa-verification-container');
+            if (c2paVerificationContainer) {
+                c2paVerificationContainer.style.display = 'block';
+            }
             
-            document.getElementById('filename').textContent = metadata.filename;
+            // Show filename under source thumbnail
+            const filenameElement = document.getElementById('filename');
+            filenameElement.textContent = metadata.filename;
+            filenameElement.style.display = 'block';
             
             hideLoading();
             renderPhotographyMetadata(metadata);
             renderExifMetadata(metadata);
-            renderProvenance(metadata);
+            
+            // Load and display C2PA metadata
+            const c2paProvenance = await loadC2PAMetadataFromApi(params.imageUri);
+            if (c2paProvenance && c2paProvenance.length > 0) {
+                renderC2PAMetadata(c2paProvenance);
+            } else {
+                renderProvenance(metadata);
+            }
             
             await renderSourceThumbnail(params.imageUri);
         }

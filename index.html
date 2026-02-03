@@ -15,28 +15,24 @@
         <div class="main-content">
             <div class="image-container">
                 <img id="mainImage" class="framed-image" src="" alt="Main Image" style="display: none;">
-                <div id="c2paVerification" class="c2pa-verification" style="display: none;">
-                    <div class="c2pa-logo"></div>
-                    <a href="https://contentcredentials.org/about/" target="_blank" rel="noopener noreferrer">
-                        C2PA Verified
-                    </a>
-                </div>
             </div>
         </div>
 
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <h1>Image Metadata</h1>
-                <p id="filename">No image selected</p>
+                <a href="https://contentcredentials.org/about/" target="_blank">
+                    <img src="content_credentials_logo.svg" alt="Content Credentials Logo" class="sidebar-logo">
+                </a>
             </div>
             
             <div class="sidebar-content">
                 <!-- Thumbnail Section -->
                 <div class="thumbnail-section">
                     <div class="thumbnail-container">
-                        <span class="thumbnail-label">Source Image Thumbnail</span>
-                        <img id="sourceImage" class="thumbnail" src="" alt="Source Image Thumbnail" style="display: none;">
+                        <span class="thumbnail-label">Original Image</span>
+                        <img id="sourceImage" class="thumbnail" src="" alt="Original Image Thumbnail" style="display: none;">
+                        <p id="filename" class="thumbnail-filename" style="display: none;"></p>
                     </div>
                 </div>
 
@@ -114,7 +110,11 @@
                         </div>
                         <div class="metadata-item">
                             <span class="metadata-label">Color Space</span>
-                            <span class="metadata-value">sRGB</span>
+                            <span class="metadata-value" id="colorSpace">sRGB</span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">File Size</span>
+                            <span class="metadata-value" id="fileSize"></span>
                         </div>
                         <div class="metadata-item">
                             <span class="metadata-label">Software</span>

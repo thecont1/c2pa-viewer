@@ -51,18 +51,16 @@ body {
 }
 
 .framed-image {
-  max-height: 100%;
-  max-width: 100%;
-  object-fit: contain;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px var(--shadow-light);
-  transition: none;
+    max-height: calc(100vh - 80px);
+    max-width: calc(100vw - 360px - 80px);
+    object-fit: contain;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px var(--shadow-medium);
+    transition: none;
+    margin: 40px;
 }
 
 .c2pa-verification {
-  position: absolute;
-  bottom: 12px;
-  left: 12px;
   background-color: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -71,6 +69,7 @@ body {
   align-items: center;
   gap: 6px;
   transition: none;
+  margin-bottom: 16px;
 }
 
 .c2pa-verification:hover {
@@ -80,7 +79,7 @@ body {
 .c2pa-logo {
   width: 32px;
   height: 20px;
-  background-image: url('https://contentcredentials.org/wp-content/uploads/sites/34/2025/05/content_credentials_logo.svg');
+  background-image: url('content_credentials_logo.svg');
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
@@ -110,9 +109,16 @@ body {
 }
 
 .sidebar-header {
-  padding: 16px 20px;
-  background-color: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
+    padding: 16px 20px;
+    background-color: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.sidebar-logo {
+    height: 30px;
+    width: auto;
+    object-fit: contain;
 }
 
 .sidebar-header h1 {
@@ -153,11 +159,18 @@ body {
 }
 
 .thumbnail-container {
-  background-color: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 12px;
-  text-align: center;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 12px;
+    text-align: center;
+}
+
+.thumbnail-filename {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    word-wrap: break-word;
 }
 
 .thumbnail-label {
@@ -171,10 +184,49 @@ body {
 
 .thumbnail {
   max-width: 100%;
-  max-height: 120px;
+  max-height: 250px;
   object-fit: contain;
   display: block;
   margin: 0 auto;
+  transition: transform 0.2s ease;
+}
+
+.thumbnail:hover {
+  transform: scale(1.02);
+}
+
+/* Tooltip for truncated text */
+.tooltip {
+  position: relative;
+  cursor: help;
+}
+
+.tooltip:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--text-primary);
+  color: var(--bg-primary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+  font-size: 11px;
+  margin-bottom: 8px;
+  z-index: 100;
+  box-shadow: 0 2px 8px var(--shadow-medium);
+}
+
+.tooltip:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--text-primary);
+  margin-bottom: 2px;
 }
 
 /* Metadata Grid */
@@ -225,9 +277,7 @@ body {
 .metadata-label {
   color: var(--text-tertiary);
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
   max-width: 60%;
 }
 
@@ -235,9 +285,7 @@ body {
   color: var(--text-primary);
   font-weight: 500;
   text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
   max-width: 40%;
 }
 
@@ -276,15 +324,22 @@ body {
 }
 
 .provenance-item {
-  padding: 8px 0;
-  font-size: 11px;
-  color: var(--text-secondary);
-  position: relative;
-  padding-left: 16px;
+    padding: 8px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    position: relative;
+    padding-left: 0px;
+}
+
+.provenance-item p {
+    margin: 4px 0 0 0;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.4;
 }
 
 .provenance-item::before {
-  content: '•';
+  content: '';
   position: absolute;
   left: 0;
   color: var(--text-tertiary);
