@@ -1,3 +1,6 @@
+archive/
+WARP.md
+
 # Virtual environment
 .venv/
 __pycache__/
