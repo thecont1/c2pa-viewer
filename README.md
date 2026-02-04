@@ -87,7 +87,7 @@ The test script makes HTTP requests to localhost:8080, so the server must be run
 
 - **Frontend**: HTML5, CSS3, JavaScript
 
-- **Metadata Extraction**: `c2pa-python` (official C2PA SDK), `pillow` (for EXIF and image processing)
+- **Metadata Extraction**: [c2pa-python](https://github.com/contentauth/c2pa-python) (official C2PA SDK), [pillow](https://github.com/python-pillow/Pillow) (for EXIF and image processing)
 
 - **Server**: Uvicorn (ASGI server)
 
