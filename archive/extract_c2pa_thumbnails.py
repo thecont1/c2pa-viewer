@@ -10,7 +10,7 @@ import sys
 import os
 
 def extract_thumbnails(jpeg_path):
-    """Extract C2PA thumbnails using pattern matching."""
+    """Extract C2PA thumbnails - simple approach for this file."""
     
     with open(jpeg_path, 'rb') as f:
         data = f.read()
@@ -31,11 +31,18 @@ def extract_thumbnails(jpeg_path):
             f.write(match)
         print(f"Saved thumbnail_{i}.jpg ({len(match)} bytes)")
         
-        # Try to determine if it's a claim or ingredient thumbnail
-        if b'c2pa.thumbnail.claim' in data[data.find(match)-100:data.find(match)]:
-            claim_thumbnails.append(match)
-        if b'c2pa.thumbnail.ingredient' in data[data.find(match)-100:data.find(match)]:
-            ingredient_thumbnails.append(match)
+        # For files with exactly 2 thumbnails, assume first is claim, second is ingredient
+        if len(matches) == 2:
+            if i == 0:
+                claim_thumbnails.append(match)
+            elif i == 1:
+                ingredient_thumbnails.append(match)
+        else:
+            # Fallback to pattern detection for other cases
+            if b'c2pa.thumbnail.claim' in data[data.find(match)-200:data.find(match)]:
+                claim_thumbnails.append(match)
+            if b'c2pa.thumbnail.ingredient' in data[data.find(match)-200:data.find(match)]:
+                ingredient_thumbnails.append(match)
     
     print(f"\nClaim thumbnails found: {len(claim_thumbnails)}")
     print(f"Ingredient thumbnails found: {len(ingredient_thumbnails)}")

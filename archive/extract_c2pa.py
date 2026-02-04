@@ -9,12 +9,12 @@ import json
 import subprocess
 
 def extract_c2pa_thumbnails(jpeg_path):
-    """Extract C2PA thumbnails from JPEG file using exiftool."""
+    """Extract C2PA thumbnails from JPEG file - simple and reliable method."""
     claim_thumb = None
     ingredient_thumb = None
     
     try:
-        # Extract claim thumbnail using exiftool
+        # First, try exiftool extraction
         claim_result = subprocess.run(
             ['exiftool', '-b', '-C2PAThumbnailClaimJpegData', jpeg_path],
             capture_output=True
@@ -23,7 +23,6 @@ def extract_c2pa_thumbnails(jpeg_path):
             claim_thumb = claim_result.stdout
             print("Found claim thumbnail using exiftool")
         
-        # Extract ingredient thumbnail using exiftool
         ingredient_result = subprocess.run(
             ['exiftool', '-b', '-C2PAThumbnailIngredientJpegData', jpeg_path],
             capture_output=True
@@ -32,53 +31,43 @@ def extract_c2pa_thumbnails(jpeg_path):
             ingredient_thumb = ingredient_result.stdout
             print("Found ingredient thumbnail using exiftool")
             
-    except Exception as e:
-        print(f"Error extracting C2PA thumbnails with exiftool: {e}")
-        
-        # Fallback to manual extraction if exiftool fails
-        with open(jpeg_path, 'rb') as f:
-            data = f.read()
-        
-        # JPEG SOI marker
-        soi = b'\xff\xd8'
-        if data.startswith(soi):
-            offset = 2
-            while offset < len(data):
-                if data[offset] == 0xff and data[offset+1] in [0xe1, 0xe2]:
-                    # APP1 or APP2 segment (could contain C2PA jumb)
-                    segment_length = struct.unpack('>H', data[offset+2:offset+4])[0]
-                    segment_data = data[offset+4:offset+4+segment_length]
-                    
-                    # Look for jumb markers
-                    if b'jumb' in segment_data:
-                        print(f"Found APP{data[offset+1] - 0xe0 + 1} segment with C2PA data")
-                        
-                        # Extract claim thumbnail
-                        claim_start = segment_data.find(b'c2pa.thumbnail.claim.jpeg')
-                        if claim_start != -1:
-                            claim_start += len(b'c2pa.thumbnail.claim.jpeg')
-                            jpeg_start = segment_data.find(b'\xff\xd8', claim_start)
-                            if jpeg_start != -1:
-                                jpeg_end = segment_data.find(b'\xff\xd9', jpeg_start)
-                                if jpeg_end != -1:
-                                    claim_thumb = segment_data[jpeg_start:jpeg_end+2]
-                                    print("Found claim thumbnail")
-                    
-                        # Extract ingredient thumbnail
-                        ingredient_start = segment_data.find(b'c2pa.thumbnail.ingredient.jpeg')
-                        if ingredient_start != -1:
-                            ingredient_start += len(b'c2pa.thumbnail.ingredient.jpeg')
-                            jpeg_start = segment_data.find(b'\xff\xd8', ingredient_start)
-                            if jpeg_start != -1:
-                                jpeg_end = segment_data.find(b'\xff\xd9', jpeg_start)
-                                if jpeg_end != -1:
-                                    ingredient_thumb = segment_data[jpeg_start:jpeg_end+2]
-                                    print("Found ingredient thumbnail")
-                    
-                    offset += 4 + segment_length
+        # If exiftool didn't find anything, use fallback extraction
+        if not claim_thumb or not ingredient_thumb:
+            import re
+            with open(jpeg_path, 'rb') as f:
+                data = f.read()
+            
+            # Find all JPEG thumbnails in file
+            jpeg_pattern = re.compile(b'\xff\xd8.*?\xff\xd9', re.DOTALL)
+            matches = jpeg_pattern.findall(data)
+            
+            print(f"Found {len(matches)} JPEG segments in file")
+            
+            for i, match in enumerate(matches):
+                output_path = f"thumbnail_{i}.jpg"
+                with open(output_path, 'wb') as f:
+                    f.write(match)
+                print(f"Saved thumbnail_{i}.jpg ({len(match)} bytes)")
                 
+                # For files with exactly 2 thumbnails, assume first is claim, second is ingredient
+                if len(matches) == 2:
+                    if i == 0 and not claim_thumb:
+                        claim_thumb = match
+                        print("Found claim thumbnail (fallback)")
+                    elif i == 1 and not ingredient_thumb:
+                        ingredient_thumb = match
+                        print("Found ingredient thumbnail (fallback)")
                 else:
-                    offset += 1
+                    # Fallback to pattern detection for other cases
+                    if b'c2pa.thumbnail.claim' in data[data.find(match)-200:data.find(match)] and not claim_thumb:
+                        claim_thumb = match
+                        print("Found claim thumbnail (pattern match)")
+                    if b'c2pa.thumbnail.ingredient' in data[data.find(match)-200:data.find(match)] and not ingredient_thumb:
+                        ingredient_thumb = match
+                        print("Found ingredient thumbnail (pattern match)")
+            
+    except Exception as e:
+        print(f"Error extracting C2PA thumbnails: {e}")
     
     return claim_thumb, ingredient_thumb
 
@@ -89,7 +78,7 @@ def extract_c2pa_metadata(jpeg_path):
     try:
         # Extract C2PA metadata using exiftool
         result = subprocess.run(
-            ['exiftool', '-json', '-Actions', '-C2PA*', jpeg_path],
+            ['exiftool', '-json', '-Actions*', '-C2PA*', '-Claim*', '-Author*', '-MetadataDate', jpeg_path],
             capture_output=True,
             text=True
         )
@@ -116,12 +105,30 @@ def extract_c2pa_metadata(jpeg_path):
                 provenance.append({'name': 'Author', 'author': metadata['AuthorName']})
             
             # Extract claim generator info
-            if 'Claimgenerator' in metadata:
-                provenance.append({'name': 'Claim Generator', 'generator': metadata['Claimgenerator']})
+            if 'Claim_generator' in metadata:
+                provenance.append({'name': 'Claim Generator', 'generator': metadata['Claim_generator']})
             
             # Extract signature info
             if 'Signature' in metadata:
                 provenance.append({'name': 'Signature', 'signature': metadata['Signature']})
+            
+            # Extract issuing authority and date/time
+            if 'MetadataDate' in metadata:
+                provenance.append({'name': 'Issued On', 'date': metadata['MetadataDate']})
+            
+            # Extract claim generator info
+            if 'Claim_Generator_InfoName' in metadata:
+                provenance.append({'name': 'Issued By', 'issuer': metadata['Claim_Generator_InfoName']})
+            
+            # Extract claim generator version
+            if 'Claim_Generator_InfoVersion' in metadata:
+                provenance.append({'name': 'Version', 'version': metadata['Claim_Generator_InfoVersion']})
+            
+            # Extract verification status
+            if 'Signature' in metadata or 'C2PAThumbnailClaimJpegData' in metadata:
+                provenance.append({'name': 'Verification', 'verification': 'Valid'})
+            else:
+                provenance.append({'name': 'Verification', 'verification': 'Failed'})
             
     except Exception as e:
         print(f"Error extracting C2PA metadata: {e}")

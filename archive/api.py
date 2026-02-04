@@ -75,6 +75,37 @@ def extract_metadata(image_path):
     file_size_bytes = os.path.getsize(image_path)
     file_size_mb = round(file_size_bytes / (1024 * 1024), 2)
     
+    # Extract GPS coordinates
+    gps_latitude = None
+    gps_longitude = None
+    if "GPSInfo" in processed_exif:
+        gps_info = processed_exif["GPSInfo"]
+        # GPSInfo is a dictionary with tags like 1, 2, 3, 4 for latitude/longitude
+        try:
+            if 2 in gps_info and 1 in gps_info and 4 in gps_info and 3 in gps_info:
+                # Latitude: [degrees, minutes, seconds]
+                lat = gps_info[2]
+                lat_deg = float(lat[0])
+                lat_min = float(lat[1])
+                lat_sec = float(lat[2])
+                latitude = lat_deg + (lat_min / 60) + (lat_sec / 3600)
+                if gps_info[1] == "S":
+                    latitude = -latitude
+                
+                # Longitude: [degrees, minutes, seconds]
+                lon = gps_info[4]
+                lon_deg = float(lon[0])
+                lon_min = float(lon[1])
+                lon_sec = float(lon[2])
+                longitude = lon_deg + (lon_min / 60) + (lon_sec / 3600)
+                if gps_info[3] == "W":
+                    longitude = -longitude
+                
+                gps_latitude = latitude
+                gps_longitude = longitude
+        except Exception as e:
+            app.logger.error(f"Error parsing GPS coordinates: {e}")
+    
     metadata = {
         os.path.basename(image_path): {
             "filename": os.path.basename(image_path),
@@ -85,7 +116,11 @@ def extract_metadata(image_path):
             "file_size_bytes": file_size_bytes,
             "file_size_mb": file_size_mb,
             "exif": processed_exif,
-            "photography": {}
+            "photography": {},
+            "gps": {
+                "latitude": gps_latitude,
+                "longitude": gps_longitude
+            }
         }
     }
     
@@ -246,7 +281,28 @@ def get_metadata():
     
     os.unlink(temp_file)
     
-    return jsonify(metadata)
+    # Convert all values to JSON-serializable types
+    def convert(obj):
+        if isinstance(obj, bytes):
+            try:
+                return obj.decode('utf-8')
+            except:
+                return obj.hex()
+        elif hasattr(obj, '__dict__'):
+            return str(obj)
+        elif isinstance(obj, (int, float)):
+            return obj
+        elif isinstance(obj, str):
+            return obj
+        elif isinstance(obj, (list, tuple)):
+            return [convert(x) for x in obj]
+        elif isinstance(obj, dict):
+            return {k: convert(v) for k, v in obj.items()}
+        else:
+            return str(obj)
+            
+    serializable_metadata = convert(metadata)
+    return jsonify(serializable_metadata)
 
 @app.route('/api/extract_thumbnails', methods=['GET'])
 def extract_thumbnails():
