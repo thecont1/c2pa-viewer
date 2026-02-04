@@ -6,7 +6,29 @@ const metadataMappings = {
     exposureModes: { 0: 'Auto', 1: 'Manual', 2: 'Aperture Priority', 3: 'Shutter Priority' },
     meteringModes: { 0: 'Unknown', 1: 'Average', 2: 'Center-weighted', 3: 'Spot', 5: 'Matrix' },
     flashStates: { 0: 'No Flash', 1: 'Flash Fired' },
-    whiteBalance: { 0: 'Auto', 1: 'Manual' }
+    whiteBalance: { 0: 'Auto', 1: 'Manual' },
+    actions: {
+        'c2pa.opened': {
+            icon: '📂',
+            description: 'Opened a pre-existing file'
+        },
+        'c2pa.color_adjustments': {
+            icon: '🎨',
+            description: 'Adjusted properties like tone, saturation, curves, shadows, or highlights'
+        },
+        'c2pa.cropped': {
+            icon: '✂️',
+            description: 'Used cropping tools, reducing or expanding visible content area'
+        },
+        'c2pa.drawing': {
+            icon: '✏️',
+            description: 'Used tools like pencils, brushes, erasers, or shape, path, or pen tools'
+        },
+        'c2pa.resized': {
+            icon: '🔍',
+            description: 'Changed dimensions or file size'
+        }
+    }
 };
 
 async function extractParamsFromUrl() {
@@ -17,12 +39,16 @@ async function extractParamsFromUrl() {
 }
 
 async function loadMetadataFromApi(uri) {
+    console.log('Loading metadata from URI:', uri);
+    
     try {
         const response = await fetch(`http://localhost:8080/api/metadata?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
+        console.log('API response data:', data);
+        
         const imageKey = Object.keys(data)[0];
         return data[imageKey];
     } catch (error) {
@@ -98,9 +124,83 @@ function renderPhotographyMetadata(metadata) {
     setFullText('iso', photography.iso || 'Unknown');
     setFullText('focalLength', photography.focal_length || 'Unknown');
     setFullText('dateOriginal', photography.date_original || 'Unknown');
+    setFullText('dateDigitized', photography.date_digitized || 'Unknown');
     setFullText('artist', photography.artist || 'Unknown');
-    setFullText('description', photography.description || 'No description available');
     setFullText('colorSpace', photography.color_space || 'Unknown');
+}
+
+function renderIPTCMetadata(metadata) {
+    const iptc = metadata.iptc || {};
+    
+    // Build description section with title and description
+    const descSection = document.querySelector('.description-section');
+    let html = '<h2>Image Description & Information</h2>';
+    
+    // Add title if available
+    if (iptc.title) {
+        html += `<h3 style="margin-top: 1rem; margin-bottom: 0.5rem; font-size: 1.1rem; font-weight: 600;">${iptc.title}</h3>`;
+    }
+    
+    // Add description
+    const description = iptc.description || metadata.photography?.description || 'No description available';
+    html += `<p class="description">${description}</p>`;
+    
+    // Add location if available
+    if (iptc.location || iptc.city) {
+        const location = [iptc.location, iptc.city].filter(Boolean).join(', ');
+        html += `<p style="margin-top: 0.5rem; font-style: italic; color: #666;">📍 ${location}</p>`;
+    }
+    
+    // Add keywords if available
+    if (iptc.keywords) {
+        html += `<p style="margin-top: 0.5rem; font-size: 0.9rem;"><strong>Keywords:</strong> ${iptc.keywords}</p>`;
+    }
+    
+    descSection.innerHTML = html;
+}
+
+function renderGPSMetadata(metadata) {
+    console.log('Metadata.gps:', metadata.gps);
+    
+    const gps = metadata.gps || {};
+    const locationSection = Array.from(document.querySelectorAll('.metadata-section')).find(section => 
+        section.querySelector('h2') && section.querySelector('h2').textContent.includes('Location')
+    );
+    
+    if (gps.latitude && gps.longitude && gps.latitude !== 'None' && gps.longitude !== 'None') {
+        // Format latitude and longitude with degree symbols and directions
+        let lat = parseFloat(gps.latitude);
+        let lon = parseFloat(gps.longitude);
+        
+        const latDirection = lat >= 0 ? 'N' : 'S';
+        const lonDirection = lon >= 0 ? 'E' : 'W';
+        
+        lat = Math.abs(lat);
+        lon = Math.abs(lon);
+        
+        const latDeg = Math.floor(lat);
+        const latMin = Math.floor((lat - latDeg) * 60);
+        const latSec = ((lat - latDeg - latMin / 60) * 3600).toFixed(2);
+        
+        const lonDeg = Math.floor(lon);
+        const lonMin = Math.floor((lon - lonDeg) * 60);
+        const lonSec = ((lon - lonDeg - lonMin / 60) * 3600).toFixed(2);
+        
+        const formattedLat = `${latDeg}°${latMin}'${latSec}" ${latDirection}`;
+        const formattedLon = `${lonDeg}°${lonMin}'${lonSec}" ${lonDirection}`;
+        
+        const gpsElement = document.getElementById('gpsCoordinates');
+        if (gpsElement) {
+            const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${gps.latitude},${gps.longitude}`;
+            gpsElement.innerHTML = `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">${formattedLat}, ${formattedLon}</a>`;
+        }
+        
+        // Show location section
+        locationSection.style.display = 'block';
+    } else {
+        // Hide location section if GPS coordinates are not available
+        locationSection.style.display = 'none';
+    }
 }
 
 function setFullText(elementId, text) {
@@ -122,18 +222,13 @@ function renderExifMetadata(metadata) {
             : 'Unknown');
     setFullText('dimensions', 
         metadata.width && metadata.height 
-            ? `${metadata.width} × ${metadata.height} pixels` 
+            ? `${metadata.width} × ${metadata.height}` 
             : 'Unknown');
     setFullText('fileSize', 
         metadata.file_size_bytes ? `${metadata.file_size_mb} MB (${metadata.file_size_bytes.toLocaleString()} bytes)` : 'Unknown');
     setFullText('software', exif.Software || 'Unknown');
-    setFullText('lensSerial', exif.LensSerialNumber || 'Unknown');
-    setFullText('bodySerial', exif.BodySerialNumber || 'Unknown');
-    setFullText('dateDigitized', exif.DateTimeDigitized || 'Unknown');
-    setFullText('maxAperture', 
-        exif.MaxApertureValue ? `f/${exif.MaxApertureValue}` : 'Unknown');
     
-    setFullText('exposureMode', 
+    setFullText('exposureMode',
         exif.ExposureMode !== undefined ? metadataMappings.exposureModes[exif.ExposureMode] || 'Unknown' : 'Unknown');
     
     setFullText('meteringMode', 
@@ -174,30 +269,93 @@ function renderC2PAMetadata(provenance) {
     }
     
     let html = '';
+    const actions = [];
     
     provenance.forEach((item, index) => {
+        if (item.name === 'Action' && item.action) {
+            actions.push(item.action);
+        }
+    });
+    
+    // Display unique actions
+    const uniqueActions = [...new Set(actions)];
+    if (uniqueActions.length > 0) {
         html += `
             <li class="provenance-item">
-                <strong>${item.name || `Step ${index + 1}`}</strong>
+                <strong>Edits</strong>
+                <div class="actions-container">
         `;
         
-        if (item.title) {
-            html += `<p>${item.title}</p>`;
-        }
+        uniqueActions.forEach(action => {
+            const actionInfo = metadataMappings.actions[action];
+            const icon = actionInfo?.icon || '📋';
+            const description = actionInfo?.description || action;
+            
+            html += `
+                <div class="action-item" title="${description}">
+                    <span class="action-icon">${icon}</span>
+                    <span class="action-name">${action.split('.').pop()}</span>
+                </div>
+            `;
+        });
         
-        if (item.tool) {
-            html += `<p><em>Tool: ${item.tool}</em></p>`;
+        html += `
+                </div>
+            </li>
+        `;
+    }
+    
+    provenance.forEach((item, index) => {
+        if (item.name !== 'Action') {
+            html += `
+                <li class="provenance-item">
+                    <strong>${item.name || `Step ${index + 1}`}</strong>
+            `;
+            
+            if (item.title) {
+                html += `<p>${item.title}</p>`;
+            }
+            
+            if (item.tool) {
+                html += `<p><em>${item.tool}</em></p>`;
+            }
+            
+            if (item.parameters) {
+                html += `<p>${JSON.stringify(item.parameters)}</p>`;
+            }
+            
+            if (item.data) {
+                html += `<p>${item.data}</p>`;
+            }
+            
+            if (item.generator) {
+                html += `<p>${item.generator}</p>`;
+            }
+            
+            if (item.issuer) {
+                html += `<p>${item.issuer}</p>`;
+            }
+            
+            if (item.date) {
+                // Date is already formatted by backend
+                html += `<p>${item.date}</p>`;
+            }
+            
+            if (item.version) {
+                html += `<p>${item.version}</p>`;
+            }
+            
+            if (item.verification) {
+                const verificationClass = item.verification === 'Valid' ? 'valid' : 'failed';
+                html += `
+                    <p class="verification ${verificationClass}">
+                        ✅ ${item.verification}
+                    </p>
+                `;
+            }
+            
+            html += `</li>`;
         }
-        
-        if (item.parameters) {
-            html += `<p>Parameters: ${JSON.stringify(item.parameters)}</p>`;
-        }
-        
-        if (item.data) {
-            html += `<p>Data: ${item.data}</p>`;
-        }
-        
-        html += `</li>`;
     });
     
     provenanceSection.innerHTML = html;
@@ -286,6 +444,8 @@ async function init() {
     try {
         const metadata = await loadMetadataFromApi(params.imageUri);
         
+        console.log('Metadata received:', metadata);
+        
         if (metadata) {
             const mainImage = document.getElementById('mainImage');
             mainImage.src = params.imageUri;
@@ -305,6 +465,8 @@ async function init() {
             hideLoading();
             renderPhotographyMetadata(metadata);
             renderExifMetadata(metadata);
+            renderGPSMetadata(metadata);
+            renderIPTCMetadata(metadata);
             
             // Load and display C2PA metadata
             const c2paProvenance = await loadC2PAMetadataFromApi(params.imageUri);
