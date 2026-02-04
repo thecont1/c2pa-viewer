@@ -1,6 +1,6 @@
-# Image Metadata Viewer with C2PA Verification
+# C2PA Viewer
 
-A modern web application that extracts and displays comprehensive metadata from images using C2PA (Coalition for Content Provenance and Authenticity) standards.
+An API-based image viewer web application that allows users to verify [C2PA content credentials](https://contentcredentials.org/) as well as view EXIF and IPTC information embedded within the image.
 
 ## Features
 
@@ -17,7 +17,6 @@ A modern web application that extracts and displays comprehensive metadata from 
   - Exposure Settings (aperture, shutter speed, ISO, focal length)
   - Image Details (format, resolution, dimensions)
   - Photographer Information (artist, capture dates)
-  - Advanced Settings (metering mode, flash, white balance)
 
 ### 3. C2PA Verification
 - Extracts and displays C2PA thumbnails (claim and ingredient images)
@@ -30,105 +29,111 @@ A modern web application that extracts and displays comprehensive metadata from 
 - Handles both local files and remote URLs
 - CORS-enabled for cross-origin requests
 
+## How to Run the App
+
+### Prerequisites
+- Python 3.12 or higher 
+- UV package manager ([install](https://docs.astral.sh/uv/getting-started/installation/))
+
+### Installation
+1. Clone the repository
+   ```bash
+   # Open Terminal. 
+   # Change the current working directory to where you want the cloned directory.
+
+   git clone https://github.com/thecont1/c2pa-viewer.git
+   ```
+
+2. Install dependencies using UV:
+   ```
+   uv sync
+   ```
+
+### Test the API endpoints
+The test script makes HTTP requests to localhost:8080, so the server must be running first.
+
+1. Start the server in one terminal:
+
+   ```zsh
+   uv run python3 server.py
+   ```
+
+2. Run tests in another terminal:
+
+   ```zsh
+   uv run python3 test_server.py
+   ```
+
+   The server will start on `http://localhost:8080` and serve both the API and frontend.
+
+3. Access the application:
+
+   - Frontend: `http://localhost:8080/`
+
+   - API endpoints: 
+      - `http://localhost:8080/api/metadata`
+      - `http://localhost:8080/api/c2pa_metadata`
+      - `http://localhost:8080/api/extract_thumbnails`
+
+4. **Typical usage**: Pass an image URL to the app.
+
+   [http://localhost:8080/?uri=https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg](http://localhost:8080/?uri=https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg)
+
+   This photograph of a moonrise over Accra, Ghana is quite surreal. But is it real? And how real is it? Go ahead and verify its content credentials.
+
 ## Technology Stack
 
-- **Frontend**: HTML5, CSS3, JavaScript (ES6+)
-- **Backend**: Flask (Python 3.13)
-- **Image Processing**: PIL/Pillow library
-- **C2PA Support**: Custom extraction script for C2PA thumbnails
+- **Backend**: Python 3.12, FastAPI, c2pa-python
 
-## Usage
+- **Frontend**: HTML5, CSS3, JavaScript
 
-### Starting the Application
+- **Metadata Extraction**: `c2pa-python` (official C2PA SDK), `pillow` (for EXIF and image processing)
 
-1. **Start the API server**:
-   ```bash
-   uv run python3 api.py
-   ```
-   The API will run on http://localhost:8080
+- **Server**: Uvicorn (ASGI server)
 
-2. **Start the web server**:
-   ```bash
-   uv run python3 -m http.server 8000
-   ```
+## Main Entry Points
 
-3. **Open the application**:
-   Navigate to `http://localhost:8000/index.html?uri=<image_path>`
+- **Frontend**: `index.html` - main HTML file for the application
 
-### Examples
+- **Backend**: `server.py` - FastAPI server that handles all metadata extraction
 
-**Local File**:
+- **Styles**: `styles.css` - CSS file for styling the application
+
+- **Script**: `script.js` - JavaScript file for rendering metadata
+
+- **Tests**: `test_server.py` - API endpoint tests
+
+## Architecture Notes
+
+### Why FastAPI over Flask
+The project uses FastAPI instead of Flask because:
+- Modern async/await support
+- Built-in data validation with Pydantic
+- Automatic API documentation (OpenAPI/Swagger)
+- Better type safety and IDE support
+- Higher performance
+
+### Why c2pa-python over ExifTool
+The project uses the c2pa-python library instead of ExifTool because:
+- Official C2PA SDK with proper API
+- More reliable metadata extraction
+- Better thumbnail extraction
+- No external process dependencies
+- Direct access to C2PA manifest structure
+
+## File Structure
 ```
-http://localhost:8000/index.html?uri=MS201711-Belgrade0536.jpg
+c2pa-viewer/
+├── index.html           # Main HTML file
+├── styles.css           # Stylesheet for the application
+├── script.js            # JavaScript for frontend logic
+├── server.py            # FastAPI server with all API endpoints
+├── test_server.py       # API endpoint tests
+├── pyproject.toml       # Project dependencies (UV)
+├── uv.lock              # Dependency lock file
+├── archive/             # Archived legacy files
+└── README.md            # This file
 ```
-
-**Remote URL**:
-```
-http://localhost:8000/index.html?uri=https://example.com/images/photo.jpg
-```
-
-## Project Structure
-
-```
-c2pa_metadata_viewer/
-├── index.html              # Main HTML file
-├── styles.css              # Stylesheet for the application
-├── script.js               # JavaScript for frontend logic
-├── api.py                  # Flask API server
-├── extract_c2pa.py         # C2PA thumbnail extraction script
-├── extract_c2pa_thumbnails.py # Helper script for C2PA extraction
-└── README.md               # This file
-```
-
-## API Endpoints
-
-### `/api/metadata`
-- **Method**: GET
-- **Description**: Extract metadata from an image URI
-- **Parameters**: `uri` (required) - Image URI to process
-- **Response**: JSON object with metadata
-
-### `/api/extract_thumbnails`
-- **Method**: GET
-- **Description**: Extract C2PA thumbnails from an image
-- **Parameters**: `uri` (required) - Image URI to process
-- **Response**: JSON object with base64-encoded thumbnails
-
-## Browser Support
-
-- Chrome 60+
-- Firefox 55+
-- Safari 12+
-- Edge 79+
-
-## Requirements
-
-- Python 3.13+
-- Flask 3.0+
-- Pillow 10.0+
-- requests 2.30+
-
-## Installation
-
-1. **Create virtual environment**:
-   ```bash
-   uv venv
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   uv pip install flask flask-cors pillow requests
-   ```
-
-3. **Run the application** (as described in Usage section)
-
-## Notes
-
-- The application supports C2PA-verified images with embedded metadata
-- Local file paths must be accessible from the server
-- Remote URLs must be publicly accessible
-- Metadata extraction may vary depending on image format and metadata completeness
 
 ## License
-
 This project is licensed under the MIT License.

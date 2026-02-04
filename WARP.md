@@ -1,93 +1,86 @@
-# Image Metadata Visualization Application
+# C2PA Viewer
 
-## Project Overview
+An API-based image viewer web application that allows users to verify [C2PA content credentials](https://contentcredentials.org/) as well as view EXIF and IPTC information embedded within the image.
 
-This project is an image metadata visualization application that allows users to view detailed information about images, including EXIF data, photography metadata, and C2PA provenance information. The application is built with Python and JavaScript, using FastAPI as the backend API and a static HTML/CSS/JavaScript frontend.
+## Features
 
-## Stack
+### 1. Image Viewer
+- Displays the main image with a clean white background and subtle shadow effect
+- Shows a "Verified" badge with green checkmark for C2PA-verified images
+- Responsive design that works on all screen sizes
+
+### 2. Metadata Extraction
+- Extracts EXIF and IPTC metadata from images
+- Displays photography information (camera make, model, lens, exposure settings)
+- Shows detailed metadata sections:
+  - Camera & Lens (make, model, serial numbers)
+  - Exposure Settings (aperture, shutter speed, ISO, focal length)
+  - Image Details (format, resolution, dimensions)
+  - Photographer Information (artist, capture dates)
+
+### 3. C2PA Verification
+- Extracts and displays C2PA thumbnails (claim and ingredient images)
+- Shows provenance history with timestamps and actions
+- Displays verification status with visual indicators
+
+### 4. API Integration
+- RESTful API for metadata extraction
+- Accepts image URIs as input
+- Handles both local files and remote URLs
+- CORS-enabled for cross-origin requests
+
+## Technology Stack
 
 - **Backend**: Python 3.12, FastAPI, c2pa-python
+
 - **Frontend**: HTML5, CSS3, JavaScript
-- **Metadata Extraction**: c2pa-python library (official C2PA SDK), Pillow (for EXIF and image processing)
+
+- **Metadata Extraction**: `c2pa-python` (official C2PA SDK), `pillow` (for EXIF and image processing)
+
 - **Server**: Uvicorn (ASGI server)
 
 ## Main Entry Points
 
 - **Frontend**: `index.html` - main HTML file for the application
+
 - **Backend**: `server.py` - FastAPI server that handles all metadata extraction
+
 - **Styles**: `styles.css` - CSS file for styling the application
+
 - **Script**: `script.js` - JavaScript file for rendering metadata
+
 - **Tests**: `test_server.py` - API endpoint tests
 
-## Agent's Role, Goals, and Constraints
+## Architecture Notes
 
-### Role
-The AI agent's role is to assist in the development and maintenance of this image metadata visualization application.
+### Why FastAPI over Flask
+The project uses FastAPI instead of Flask because:
+- Modern async/await support
+- Built-in data validation with Pydantic
+- Automatic API documentation (OpenAPI/Swagger)
+- Better type safety and IDE support
+- Higher performance
 
-### Goals
-- Implement new features and improvements based on user requests
-- Fix bugs and issues in the application
-- Maintain the codebase following the established coding conventions
-- Ensure the application is working correctly and efficiently
+### Why c2pa-python over ExifTool
+The project uses the c2pa-python library instead of ExifTool because:
+- Official C2PA SDK with proper API
+- More reliable metadata extraction
+- Better thumbnail extraction
+- No external process dependencies
+- Direct access to C2PA manifest structure
 
-### Constraints
-- The application must be compatible with Python 3.12 and modern web browsers
-- All metadata extraction must be done server-side using Python
-- The frontend must be a static HTML/CSS/JavaScript application
-- The application must follow the established coding conventions
-
-## How to Run the App
-
-### Prerequisites
-- Python 3.12 or higher
-- UV package manager (recommended)
-
-### Installation
-1. Clone the repository
-2. Install dependencies using UV:
-   ```
-   uv pip install -r requirements.txt
-   ```
-
-### Running the Application
-1. Start the FastAPI server:
-   ```
-   uv run python3 server.py
-   ```
-   The server will start on `http://localhost:8080` and serve both the API and frontend.
-
-2. Access the application:
-   - Frontend: `http://localhost:8080/`
-   - API endpoints: `http://localhost:8080/api/metadata`, `http://localhost:8080/api/c2pa_metadata`, `http://localhost:8080/api/extract_thumbnails`
-
-3. Test with an image URL:
-   ```
-   http://localhost:8080/?uri=<image_url>
-   ```
-
-### Testing
-To test the API endpoints:
+## File Structure
 ```
-uv run python3 test_server.py
-```
-
-To run unit tests:
-```
-uv run pytest
-```
-
-### Linters and Formatters
-- **Linter**: Flake8
-- **Formatter**: Black
-
-To run the linter:
-```
-uv run flake8
-```
-
-To run the formatter:
-```
-uv run black .
+c2pa-viewer/
+├── index.html           # Main HTML file
+├── styles.css           # Stylesheet for the application
+├── script.js            # JavaScript for frontend logic
+├── server.py            # FastAPI server with all API endpoints
+├── test_server.py       # API endpoint tests
+├── pyproject.toml       # Project dependencies (UV)
+├── uv.lock              # Dependency lock file
+├── archive/             # Archived legacy files
+└── README.md            # This file
 ```
 
 ## Coding Conventions
@@ -153,31 +146,3 @@ The application extracts and displays the actions performed on images using the 
 - Reviewers should check for compliance with coding conventions
 - Reviewers should check for functionality and correctness
 - Reviewers should provide constructive feedback
-
-## Architecture Notes
-
-### Why FastAPI over Flask
-The project uses FastAPI instead of Flask because:
-- Modern async/await support
-- Built-in data validation with Pydantic
-- Automatic API documentation (OpenAPI/Swagger)
-- Better type safety and IDE support
-- Higher performance
-
-### Why c2pa-python over ExifTool
-The project uses the c2pa-python library instead of ExifTool because:
-- Official C2PA SDK with proper API
-- More reliable metadata extraction
-- Better thumbnail extraction
-- No external process dependencies
-- Direct access to C2PA manifest structure
-
-## Archived Files
-Redundant implementation files have been moved to the `archive/` directory:
-- `api.py` - Old Flask implementation
-- `extract_*.py` - Standalone extraction scripts
-
-See `archive/README.md` for details.
-
-## License
-This project is licensed under the MIT License.
