@@ -880,6 +880,12 @@ async function init() {
             mainImage.src = params.imageUri;
             mainImage.style.display = 'block';
             
+            // Hide the welcome/drag-drop zone
+            const dragDropZone = document.getElementById('dragDropZone');
+            if (dragDropZone) {
+                dragDropZone.classList.add('hidden');
+            }
+            
             // Check if C2PA verification container exists before accessing style
             const c2paVerificationContainer = document.querySelector('.c2pa-verification-container');
             if (c2paVerificationContainer) {
