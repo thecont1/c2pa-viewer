@@ -225,152 +225,62 @@ body {
    DRAG & DROP ZONE - WIDE & WELCOMING
    ======================================== */
 
-.drag-drop-zone {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 80%;
-  max-width: 700px;
-  min-height: 450px;
-  padding: 3rem;
-  border: 3px dashed var(--color-border);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, 
-    rgba(99, 102, 241, 0.03) 0%, 
-    rgba(168, 85, 247, 0.03) 50%, 
-    rgba(236, 72, 153, 0.03) 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.drag-drop-zone::before {
-  content: '';
+.welcome-zone {
   position: absolute;
   inset: 0;
-  border-radius: var(--radius-xl);
-  padding: 3px;
-  background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.4s ease;
-}
-
-.drag-drop-zone:hover::before,
-.drag-drop-zone.dragover::before {
-  opacity: 1;
-}
-
-.drag-drop-zone:hover,
-.drag-drop-zone.dragover {
-  border-color: transparent;
-  background: linear-gradient(135deg, 
-    rgba(99, 102, 241, 0.06) 0%, 
-    rgba(168, 85, 247, 0.06) 50%, 
-    rgba(236, 72, 153, 0.06) 100%);
-  transform: translate(-50%, -50%) scale(1.02);
-  box-shadow: 
-    0 25px 50px -12px rgba(99, 102, 241, 0.2),
-    0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-}
-
-.drag-drop-content {
-  text-align: center;
-  max-width: 480px;
-  background: var(--color-bg-card);
-  padding: 2rem;
-  border-radius: var(--radius-lg);
-}
-
-.drag-drop-icon-wrapper {
-  width: 100px;
-  height: 100px;
-  margin: 0 auto 1.5rem;
-  background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
-  border-radius: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 
-    0 20px 40px -10px rgba(99, 102, 241, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  animation: float 3s ease-in-out infinite;
+  background: var(--color-bg-primary);
+  cursor: pointer;
+  transition: background-color 0.3s ease;
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+.welcome-zone.dragover {
+  background: var(--color-bg-secondary);
 }
 
-.drag-drop-zone:hover .drag-drop-icon-wrapper,
-.drag-drop-zone.dragover .drag-drop-icon-wrapper {
-  transform: scale(1.1) rotate(5deg);
-  box-shadow: 
-    0 30px 60px -15px rgba(99, 102, 241, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+.welcome-content {
+  text-align: center;
+  max-width: 520px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
 }
 
-.drag-drop-icon-wrapper svg {
-  width: 48px;
-  height: 48px;
-  color: white;
-  stroke-width: 2;
+.cc-logo-large {
+  width: 280px;
+  height: auto;
+  opacity: 0.15;
+  transition: opacity 0.3s ease;
 }
 
-.drag-drop-content h2 {
-  font-size: 2rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--color-text-primary) 0%, var(--color-text-secondary) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: var(--space-3);
-  letter-spacing: -0.02em;
+.welcome-zone.dragover .cc-logo-large {
+  opacity: 0.25;
 }
 
-.drag-drop-content p {
-  color: var(--color-text-secondary);
-  font-size: 1rem;
-  margin-bottom: var(--space-4);
-  line-height: 1.6;
+.welcome-tagline {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+  line-height: 1.3;
 }
 
-.drag-drop-or {
-  position: relative;
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
+.welcome-instruction {
+  font-size: 1.125rem;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin: var(--space-4) 0;
+  color: var(--color-text-secondary);
+  margin: 0;
 }
 
-.drag-drop-or::before,
-.drag-drop-or::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 60px;
-  height: 1px;
-  background: var(--color-border);
-}
-
-.drag-drop-or::before { right: calc(50% + 20px); }
-.drag-drop-or::after { left: calc(50% + 20px); }
-
-.select-file-btn {
+.select-file-link {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-3) var(--space-5);
   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   color: white;
   font-weight: 600;
@@ -378,36 +288,46 @@ body {
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 
-    0 10px 30px -5px rgba(99, 102, 241, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-  border: none;
+  box-shadow: 0 10px 30px -5px rgba(99, 102, 241, 0.4);
+  text-decoration: none;
 }
 
-.select-file-btn:hover {
+.select-file-link:hover {
   transform: translateY(-2px);
-  box-shadow: 
-    0 20px 40px -10px rgba(99, 102, 241, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  box-shadow: 0 20px 40px -10px rgba(99, 102, 241, 0.5);
 }
 
-.select-file-btn:active {
-  transform: translateY(0);
+.cc-info {
+  margin-top: 2rem;
+  padding: 1.25rem;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-accent);
+  text-align: left;
 }
 
-.select-file-btn svg {
-  width: 18px;
-  height: 18px;
+.cc-info-text {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.75rem 0;
 }
 
-.supported-formats {
-  margin-top: var(--space-4);
+.cc-learn-more {
   font-size: 0.75rem;
-  color: var(--color-text-muted);
+  font-weight: 500;
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color 0.15s ease;
 }
 
-/* Drag Drop Hidden State */
-.drag-drop-zone.hidden {
+.cc-learn-more:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+/* Welcome Hidden State */
+.welcome-zone.hidden {
   display: none;
 }
 
@@ -1166,9 +1086,20 @@ body {
     max-width: calc(100vw - var(--space-8) * 2);
   }
   
-  .drag-drop-zone {
-    width: calc(100% - var(--space-8) * 2);
-    max-width: 400px;
+  .welcome-zone {
+    padding: 1rem;
+  }
+  
+  .welcome-content {
+    max-width: 100%;
+  }
+  
+  .cc-logo-large {
+    width: 200px;
+  }
+  
+  .welcome-tagline {
+    font-size: 1.1rem;
   }
 }
 

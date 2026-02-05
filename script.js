@@ -848,8 +848,8 @@ function setupDragAndDrop() {
     
     // Also allow clicking anywhere on the drag-drop zone to trigger file input
     dragDropZone.addEventListener('click', function(e) {
-        // Don't trigger if clicking the select button itself (it has its own label behavior)
-        if (!e.target.closest('.select-file-btn')) {
+        // Don't trigger if clicking the select button, label, or any link
+        if (!e.target.closest('.select-file-btn') && !e.target.closest('.select-file-link') && !e.target.closest('a')) {
             fileInput.click();
         }
     });
