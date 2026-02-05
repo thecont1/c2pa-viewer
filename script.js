@@ -127,6 +127,7 @@ function renderPhotographyMetadata(metadata) {
     setFullText('dateDigitized', photography.date_digitized || 'Unknown');
     setFullText('artist', photography.artist || 'Unknown');
     setFullText('colorSpace', photography.color_space || 'Unknown');
+    setFullText('colorProfile', photography.color_profile || 'Unknown');
 }
 
 function renderIPTCMetadata(metadata) {
@@ -255,14 +256,14 @@ async function loadC2PAMetadataFromApi(uri) {
     }
 }
 
-function renderC2PAMetadata(provenance) {
+function renderC2PAMetadata(provenance, hasC2PA = true) {
     const provenanceSection = document.querySelector('.provenance-list');
     
     if (!provenance || provenance.length === 0) {
         provenanceSection.innerHTML = `
             <li class="provenance-item">
-                <strong>Provenance Information</strong>
-                <p>No detailed C2PA metadata available</p>
+                <strong>Content Credentials</strong>
+                <p class="verification failed">❌ No Content Credentials</p>
             </li>
         `;
         return;
@@ -471,9 +472,9 @@ async function init() {
             // Load and display C2PA metadata
             const c2paProvenance = await loadC2PAMetadataFromApi(params.imageUri);
             if (c2paProvenance && c2paProvenance.length > 0) {
-                renderC2PAMetadata(c2paProvenance);
+                renderC2PAMetadata(c2paProvenance, true);
             } else {
-                renderProvenance(metadata);
+                renderC2PAMetadata(null, false);
             }
             
             await renderSourceThumbnail(params.imageUri);

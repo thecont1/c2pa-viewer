@@ -387,6 +387,7 @@ def extract_exif_metadata(image_path: str):
             37383: 'MeteringMode',
             37385: 'Flash',
             37386: 'FocalLength',
+            40961: 'ColorSpace',
             41495: 'SensingMethod',
             41986: 'ExposureMode',
             41987: 'WhiteBalance',
@@ -407,6 +408,17 @@ def extract_exif_metadata(image_path: str):
         
         # Extract GPS data
         result['gps'] = extract_gps_from_exif(exif_data)
+        
+        # Extract ICC color profile name
+        result['color_profile'] = None
+        if 'icc_profile' in img.info:
+            try:
+                from PIL import ImageCms
+                icc_profile = io.BytesIO(img.info['icc_profile'])
+                profile = ImageCms.ImageCmsProfile(icc_profile)
+                result['color_profile'] = ImageCms.getProfileDescription(profile)
+            except Exception as e:
+                print(f"Error extracting ICC profile: {e}")
         
         return result
         
@@ -530,14 +542,16 @@ def format_photography_metadata(exif_data):
             else:
                 shutter_speed = f"{exp_time[0] / exp_time[1]:.2f}s"
     
-    # Format focal length
+    # Format focal length with decimal precision
     focal_length = 'Unknown'
     if 'FocalLength' in exif:
         fl = exif['FocalLength']
         if isinstance(fl, (int, float)):
-            focal_length = f"{fl:.0f}mm"
+            # Remove trailing zeros (e.g., 6.00 -> 6, 6.59 -> 6.59)
+            focal_length = f"{fl:.2f}mm".rstrip('0').rstrip('.')
         elif isinstance(fl, tuple):
-            focal_length = f"{fl[0] / fl[1]:.0f}mm"
+            fl_value = fl[0] / fl[1]
+            focal_length = f"{fl_value:.2f}mm".rstrip('0').rstrip('.')
     
     # Format ISO - ensure it's displayed as integer
     iso = exif.get('ISOSpeedRatings', 'Unknown')
@@ -545,6 +559,18 @@ def format_photography_metadata(exif_data):
         iso = int(iso[0]) if iso[0] != 'Unknown' else 'Unknown'
     elif isinstance(iso, (int, float)):
         iso = int(iso)
+    
+    # Format color space from EXIF (40961: 1=sRGB, 65535=Uncalibrated)
+    color_space_value = exif.get('ColorSpace')
+    if color_space_value == 1:
+        color_space = 'sRGB'
+    elif color_space_value == 65535:
+        color_space = 'Uncalibrated'
+    else:
+        color_space = 'Unknown'
+    
+    # Get color profile from extracted data
+    color_profile = exif_data.get('color_profile', 'Unknown') or 'Unknown'
     
     return {
         'camera_make': exif.get('Make', 'Unknown'),
@@ -558,7 +584,8 @@ def format_photography_metadata(exif_data):
         'date_digitized': format_datetime_full(exif.get('DateTimeDigitized', 'Unknown')),
         'artist': exif.get('Artist', 'Unknown'),
         'description': exif.get('ImageDescription', 'No description available'),
-        'color_space': 'sRGB',  # Default
+        'color_space': color_space,
+        'color_profile': color_profile,
     }
 
 
