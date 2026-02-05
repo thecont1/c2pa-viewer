@@ -1,39 +1,23 @@
-# fly.toml app configuration file
-# See https://fly.io/docs/reference/configuration/ for information
+# fly.toml app configuration file generated for c2pa-viewer-hvue4w on 2026-02-05T00:14:51Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = 'c2pa-viewer'
-primary_region = 'sin'  # Singapore region - closest to Bengaluru
+app = 'c2pa-viewer-hvue4w'
+primary_region = 'bom'
 
 [build]
-  # Use Dockerfile for containerized build
-  dockerfile = "Dockerfile"
-
-[env]
-  PORT = '8080'
-  PYTHONUNBUFFERED = '1'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'  # Stop machines when not in use (saves costs)
+  auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 0  # Scale to zero when idle
+  min_machines_running = 0
   processes = ['app']
 
-  # Health check to ensure app is running
-  [http_service.checks]
-    grace_period = "10s"
-    interval = "30s"
-    method = "GET"
-    timeout = "5s"
-    path = "/"
-
 [[vm]]
-  memory = '256mb'  # Adequate for image processing
-  cpu_kind = 'shared-cpu-1x'
+  memory = '1gb'
+  cpu_kind = 'shared'
   cpus = 1
-
-# Static file handling
-[[statics]]
-  guest_path = "/app"
-  url_prefix = "/"
+  memory_mb = 256
