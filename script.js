@@ -416,26 +416,174 @@ async function renderSourceThumbnail(uri) {
     }
 }
 
+async function uploadImageFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    showLoading();
+    
+    try {
+        const response = await fetch('http://localhost:8080/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        const imageKey = Object.keys(data)[0];
+        const metadata = data[imageKey];
+        
+        console.log('Uploaded image metadata:', metadata);
+        
+        // Display the image
+        const mainImage = document.getElementById('mainImage');
+        mainImage.src = metadata.image_data;
+        mainImage.style.display = 'block';
+        
+        // Hide drag and drop zone
+        const dragDropZone = document.getElementById('dragDropZone');
+        dragDropZone.classList.add('hidden');
+        
+        // Remove placeholder and show sidebar sections
+        const placeholder = document.getElementById('sidebarPlaceholder');
+        if (placeholder) {
+            placeholder.remove();
+        }
+        const sidebarContent = document.querySelector('.sidebar-content');
+        const sections = sidebarContent.querySelectorAll('.thumbnail-section, .provenance-section, .metadata-grid, .description-section');
+        sections.forEach(section => {
+            section.style.display = 'block';
+        });
+        
+        // Show filename
+        const filenameElement = document.getElementById('filename');
+        filenameElement.textContent = metadata.filename;
+        filenameElement.style.display = 'block';
+        
+        hideLoading();
+        
+        // Render metadata
+        renderPhotographyMetadata(metadata);
+        renderExifMetadata(metadata);
+        renderGPSMetadata(metadata);
+        renderIPTCMetadata(metadata);
+        
+        // Load and display C2PA metadata
+        // For uploaded files, we need to handle differently - let's check if we have thumbnails
+        if (metadata.thumbnails) {
+            // Display ingredient thumbnail if available
+            if (metadata.thumbnails.ingredient_thumbnail) {
+                const sourceImage = document.getElementById('sourceImage');
+                sourceImage.src = `data:image/jpeg;base64,${metadata.thumbnails.ingredient_thumbnail}`;
+                sourceImage.style.display = 'block';
+                
+                const sourceLabel = document.querySelector('#sourceImage').previousElementSibling;
+                sourceLabel.style.display = 'block';
+                
+                sourceImage.addEventListener('load', function() {
+                    this.style.margin = '0 auto';
+                });
+            }
+            
+        }
+        
+        // Render C2PA provenance data from upload response
+        if (metadata.provenance && metadata.provenance.length > 0) {
+            renderC2PAMetadata(metadata.provenance, true);
+        } else {
+            renderC2PAMetadata(null, false);
+        }
+        
+    } catch (error) {
+        console.error('Error uploading image:', error);
+        hideLoading();
+        displayError(`Failed to upload image: ${error.message}`);
+    }
+}
+
+function setupDragAndDrop() {
+    const dropZone = document.getElementById('dropZone');
+    const dragDropZone = document.getElementById('dragDropZone');
+    const fileInput = document.getElementById('fileInput');
+    
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    // Highlight drop zone when dragging over
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight() {
+        dragDropZone.classList.add('dragover');
+    }
+    
+    function unhighlight() {
+        dragDropZone.classList.remove('dragover');
+    }
+    
+    // Handle dropped files
+    dropZone.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = Array.from(dt.files);
+        
+        if (files.length > 0 && files[0].type.startsWith('image/')) {
+            uploadImageFile(files[0]);
+        } else {
+            displayError('Please select a valid image file');
+        }
+    }
+    
+    // Handle file selection - the label naturally triggers the input
+    fileInput.addEventListener('change', function(e) {
+        console.log('File input change event');
+        if (e.target.files && e.target.files.length > 0) {
+            console.log('File selected:', e.target.files[0]);
+            uploadImageFile(e.target.files[0]);
+        }
+    });
+}
+
 async function init() {
     const params = await extractParamsFromUrl();
     
     if (!params.imageUri) {
-        const mainContent = document.querySelector('.main-content');
-        mainContent.innerHTML = `
-            <div class="loading">
-                <h2 style="margin-bottom: 1rem;">Image Metadata Viewer</h2>
-                <p style="color: #666;">Please provide an image URI in the format:</p>
-                <code style="background: #f0f0f0; padding: 0.5rem 1rem; border-radius: 4px; margin-top: 1rem; display: inline-block;">?uri=image_url</code>
-            </div>
-        `;
+        // Show drag and drop zone
+        setupDragAndDrop();
         
+        // Hide sidebar metadata sections (don't replace content)
         const sidebarContent = document.querySelector('.sidebar-content');
-        sidebarContent.innerHTML = `
-            <div style="padding: 2rem; text-align: center; color: #666;">
-                <h3 style="margin-bottom: 1rem;">No Image Selected</h3>
-                <p>Add an image URI parameter to view metadata</p>
-            </div>
+        const sections = sidebarContent.querySelectorAll('.thumbnail-section, .provenance-section, .metadata-grid, .description-section');
+        sections.forEach(section => {
+            section.style.display = 'none';
+        });
+        
+        // Add placeholder message
+        const placeholder = document.createElement('div');
+        placeholder.id = 'sidebarPlaceholder';
+        placeholder.style.cssText = 'padding: 2rem; text-align: center; color: #666;';
+        placeholder.innerHTML = `
+            <h3 style="margin-bottom: 1rem;">No Image Selected</h3>
+            <p>Drop an image here or click to select</p>
         `;
+        sidebarContent.insertBefore(placeholder, sidebarContent.firstChild);
         
         return;
     }

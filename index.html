@@ -12,9 +12,22 @@
 <body>
     <div class="container">
         <!-- Main Image Area -->
-        <div class="main-content">
+        <div class="main-content" id="dropZone">
             <div class="image-container">
                 <img id="mainImage" class="framed-image" src="" alt="Main Image" style="display: none;">
+            </div>
+            
+            <!-- Drag and Drop Zone -->
+            <div id="dragDropZone" class="drag-drop-zone">
+                <div class="drag-drop-content">
+                    <div class="drag-drop-icon">📁</div>
+                    <h2>Drop an image here</h2>
+                    <p>or click to select a file</p>
+                    <label for="fileInput" class="select-file-btn">
+                        Select Image File
+                        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                    </label>
+                </div>
             </div>
         </div>
 

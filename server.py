@@ -4,7 +4,7 @@ FastAPI backend server for C2PA Image Metadata Viewer.
 Provides REST API endpoints for metadata extraction and thumbnail retrieval.
 """
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -756,6 +756,79 @@ async def serve_logo():
     if logo_path.exists():
         return FileResponse(logo_path)
     raise HTTPException(status_code=404, detail="Logo not found")
+
+
+@app.post("/api/upload")
+async def upload_image(file: UploadFile = File(...)):
+    """Upload an image file and return metadata."""
+    try:
+        # Save uploaded file to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as temp_file:
+            temp_file.write(await file.read())
+            temp_file_path = temp_file.name
+        
+        # Extract metadata
+        c2pa_data = extract_c2pa_data(temp_file_path)
+        exif_data = extract_exif_metadata(temp_file_path)
+        iptc_data = extract_iptc_data(temp_file_path)
+        
+        # Format for web viewer
+        photography = format_photography_metadata(exif_data)
+        
+        # Use original filename for display
+        display_name = file.filename or 'unknown.jpg'
+        
+        # Get GPS data and format it
+        gps_data = exif_data.get('gps', {}) if exif_data else {}
+        formatted_gps = {}
+        
+        if 'latitude_decimal' in gps_data and 'longitude_decimal' in gps_data:
+            formatted_gps = {
+                'latitude': str(gps_data['latitude_decimal']),
+                'longitude': str(gps_data['longitude_decimal'])
+            }
+        
+        response = {
+            display_name: {
+                'filename': display_name,
+                'format': exif_data.get('format', 'JPEG') if exif_data else 'JPEG',
+                'width': exif_data.get('width') if exif_data else None,
+                'height': exif_data.get('height') if exif_data else None,
+                'file_size_bytes': exif_data.get('file_size_bytes') if exif_data else None,
+                'file_size_mb': exif_data.get('file_size_mb') if exif_data else None,
+                'photography': photography,
+                'exif': exif_data.get('exif', {}) if exif_data else {},
+                'gps': formatted_gps,
+                'iptc': iptc_data,
+            }
+        }
+        
+        # Extract thumbnails
+        thumbnails = extract_thumbnails_from_image(temp_file_path)
+        response[display_name]['thumbnails'] = thumbnails
+        
+        # Include C2PA provenance data
+        provenance = format_provenance_for_web(c2pa_data) if c2pa_data else []
+        response[display_name]['provenance'] = provenance
+        
+        # Create a data URL for the main image
+        with open(temp_file_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
+            response[display_name]['image_data'] = f"data:image/{exif_data.get('format', 'jpeg').lower()};base64,{image_data}"
+        
+        # Clean up temporary file
+        try:
+            Path(temp_file_path).unlink(missing_ok=True)
+        except Exception as e:
+            print(f"Error cleaning up temporary file: {e}")
+        
+        return response
+        
+    except Exception as e:
+        print(f"Error processing uploaded image: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/{filename}")
