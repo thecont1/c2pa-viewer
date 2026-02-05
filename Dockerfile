@@ -12,14 +12,14 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
-
 # Install uv
 RUN pip install uv
 
+# Copy dependency files AND README
+COPY pyproject.toml uv.lock README.md ./
+
 # Install dependencies using uv
-RUN uv sync --frozen
+RUN uv sync --frozen --no-dev
 
 # Copy application files
 COPY . .
@@ -27,5 +27,5 @@ COPY . .
 # Expose port
 EXPOSE 8080
 
-# Run the FastAPI application with Uvicorn
-CMD ["uv", "run", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
+# Run the FastAPI application
+CMD [".venv/bin/uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
