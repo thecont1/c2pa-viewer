@@ -1,13 +1,17 @@
 [project]
-name = "c2pa"
+name = "c2pa-viewer"
 version = "0.1.0"
-description = "Add your description here"
+description = "Web app to verify C2PA content credentials and view EXIF/IPTC info embedded within an image passed via an API call."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.128.1",
+    "uvicorn>=0.40.0",
     "c2pa-python>=0.28.0",
-    "fastapi>=0.128.0",
     "pillow>=12.1.0",
     "python-multipart>=0.0.22",
-    "uvicorn>=0.40.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
