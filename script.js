@@ -95,7 +95,9 @@ function showLoading() {
     // Hide other content temporarily
     const sections = sidebarContent.querySelectorAll('.thumbnail-section, .provenance-section, .metadata-grid, .description-section');
     sections.forEach(section => {
-        section.style.display = 'none';
+        if (section && section.style) {
+            section.style.display = 'none';
+        }
     });
 }
 
@@ -109,8 +111,42 @@ function hideLoading() {
     const sidebarContent = document.querySelector('.sidebar-content');
     const sections = sidebarContent.querySelectorAll('.thumbnail-section, .provenance-section, .metadata-grid, .description-section');
     sections.forEach(section => {
-        section.style.display = 'block';
+        if (section && section.style) {
+            section.style.display = 'block';
+        }
     });
+}
+
+function updateC2PAStatus(hasC2PA, provenanceCount = 0) {
+    const statusCard = document.getElementById('ccStatusCard');
+    const statusValue = document.getElementById('ccStatusValue');
+    const statusLabel = document.getElementById('ccStatusLabel');
+    const statusDetails = document.getElementById('ccStatusDetails');
+    const statusDescription = document.getElementById('ccStatusDescription');
+    
+    if (!statusCard || !statusValue) return;
+    
+    if (hasC2PA) {
+        statusCard.classList.add('verified');
+        statusCard.classList.remove('unverified');
+        statusValue.textContent = 'Verified';
+        if (statusDescription) {
+            statusDescription.textContent = `${provenanceCount} provenance entries found`;
+        }
+        if (statusDetails) {
+            statusDetails.style.display = 'block';
+        }
+    } else {
+        statusCard.classList.add('unverified');
+        statusCard.classList.remove('verified');
+        statusValue.textContent = 'Not Found';
+        if (statusDescription) {
+            statusDescription.textContent = 'No Content Credentials detected in this image';
+        }
+        if (statusDetails) {
+            statusDetails.style.display = 'block';
+        }
+    }
 }
 
 function renderPhotographyMetadata(metadata) {
@@ -135,7 +171,7 @@ function renderIPTCMetadata(metadata) {
     
     // Build description section with title and description
     const descSection = document.querySelector('.description-section');
-    let html = '<h2>Image Description & Information</h2>';
+    let html = '<h2>Title & Caption</h2>';
     
     // Add title if available
     if (iptc.title) {
@@ -191,16 +227,30 @@ function renderGPSMetadata(metadata) {
         const formattedLon = `${lonDeg}°${lonMin}'${lonSec}" ${lonDirection}`;
         
         const gpsElement = document.getElementById('gpsCoordinates');
+        const gpsItem = document.getElementById('gpsItem');
         if (gpsElement) {
             const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${gps.latitude},${gps.longitude}`;
             gpsElement.innerHTML = `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">${formattedLat}, ${formattedLon}</a>`;
         }
+        if (gpsItem) {
+            gpsItem.style.display = 'flex';
+        }
         
-        // Show location section
-        locationSection.style.display = 'block';
+        // Show location section (legacy)
+        if (locationSection) {
+            locationSection.style.display = 'block';
+        }
     } else {
-        // Hide location section if GPS coordinates are not available
-        locationSection.style.display = 'none';
+        // Hide GPS item
+        const gpsItem = document.getElementById('gpsItem');
+        if (gpsItem) {
+            gpsItem.style.display = 'none';
+        }
+        
+        // Hide location section if GPS coordinates are not available (legacy)
+        if (locationSection) {
+            locationSection.style.display = 'none';
+        }
     }
 }
 
@@ -256,110 +306,256 @@ async function loadC2PAMetadataFromApi(uri) {
     }
 }
 
+function toggleProvenanceExpansion() {
+    const collapsedItems = document.querySelectorAll('.collapsed-item');
+    const toggleBtn = document.getElementById('provenanceToggle');
+    const collapseBtn = document.getElementById('provenanceCollapse');
+    const isExpanded = collapseBtn && collapseBtn.style.display !== 'none';
+    
+    collapsedItems.forEach(item => {
+        item.style.display = isExpanded ? 'none' : 'block';
+    });
+    
+    if (toggleBtn) {
+        toggleBtn.style.display = isExpanded ? 'block' : 'none';
+    }
+    if (collapseBtn) {
+        collapseBtn.style.display = isExpanded ? 'none' : 'block';
+    }
+}
+
+function getActionLabel(item) {
+    // Extract a human-readable label from the action
+    if (item.action) {
+        // Convert c2pa.action_name to "Action Name"
+        const actionName = item.action.replace('c2pa.', '').replace(/_/g, ' ');
+        return actionName.charAt(0).toUpperCase() + actionName.slice(1);
+    }
+    return 'Action';
+}
+
 function renderC2PAMetadata(provenance, hasC2PA = true) {
-    const provenanceSection = document.querySelector('.provenance-list');
+    const provenanceList = document.getElementById('provenanceList');
+    const provenanceEmpty = document.getElementById('provenanceEmpty');
     
     if (!provenance || provenance.length === 0) {
-        provenanceSection.innerHTML = `
-            <li class="provenance-item">
-                <strong>Content Credentials</strong>
-                <p class="verification failed">❌ No Content Credentials</p>
-            </li>
-        `;
+        provenanceList.style.display = 'none';
+        provenanceEmpty.style.display = 'flex';
         return;
     }
     
-    let html = '';
-    const actions = [];
+    // Show list, hide empty state
+    provenanceList.style.display = 'block';
+    provenanceEmpty.style.display = 'none';
     
-    provenance.forEach((item, index) => {
-        if (item.name === 'Action' && item.action) {
-            actions.push(item.action);
+    // Extract author info from provenance
+    let authorInfo = null;
+    const filteredProvenance = provenance.filter(item => {
+        if (item.name === 'Author' && item.author_details) {
+            authorInfo = item.author_details;
         }
+        return item.name !== 'Author' || !item.author_details;
     });
     
-    // Display unique actions
-    const uniqueActions = [...new Set(actions)];
-    if (uniqueActions.length > 0) {
-        html += `
-            <li class="provenance-item">
-                <strong>Edits</strong>
-                <div class="actions-container">
-        `;
-        
-        uniqueActions.forEach(action => {
-            const actionInfo = metadataMappings.actions[action];
-            const icon = actionInfo?.icon || '📋';
-            const description = actionInfo?.description || action;
-            
-            html += `
-                <div class="action-item" title="${description}">
-                    <span class="action-icon">${icon}</span>
-                    <span class="action-name">${action.split('.').pop()}</span>
-                </div>
-            `;
-        });
-        
-        html += `
-                </div>
-            </li>
-        `;
+    // Render author info in Creator section if available
+    if (authorInfo) {
+        renderAuthorInfo(authorInfo);
     }
     
-    provenance.forEach((item, index) => {
-        if (item.name !== 'Action') {
-            html += `
-                <li class="provenance-item">
-                    <strong>${item.name || `Step ${index + 1}`}</strong>
-            `;
-            
-            if (item.title) {
-                html += `<p>${item.title}</p>`;
-            }
-            
-            if (item.tool) {
-                html += `<p><em>${item.tool}</em></p>`;
-            }
-            
-            if (item.parameters) {
-                html += `<p>${JSON.stringify(item.parameters)}</p>`;
-            }
-            
-            if (item.data) {
-                html += `<p>${item.data}</p>`;
-            }
-            
-            if (item.generator) {
-                html += `<p>${item.generator}</p>`;
-            }
-            
-            if (item.issuer) {
-                html += `<p>${item.issuer}</p>`;
-            }
-            
-            if (item.date) {
-                // Date is already formatted by backend
-                html += `<p>${item.date}</p>`;
-            }
-            
-            if (item.version) {
-                html += `<p>${item.version}</p>`;
-            }
-            
-            if (item.verification) {
-                const verificationClass = item.verification === 'Valid' ? 'valid' : 'failed';
-                html += `
-                    <p class="verification ${verificationClass}">
-                        ✅ ${item.verification}
-                    </p>
-                `;
-            }
-            
-            html += `</li>`;
-        }
-    });
+    const totalItems = filteredProvenance.length;
+    const shouldCollapse = totalItems > 2; // Need at least 3 items to collapse (first, middle(s), last)
     
-    provenanceSection.innerHTML = html;
+    let html = '';
+    
+    // Helper to render a single item
+    function renderItem(item, isHidden = false) {
+        const hiddenClass = isHidden ? 'style="display: none;"' : '';
+        const collapsedClass = isHidden ? 'collapsed-item' : '';
+        
+        if (item.name === 'Action' && item.action) {
+            const actionInfo = metadataMappings.actions[item.action];
+            const icon = actionInfo?.icon || '📋';
+            const description = actionInfo?.description || item.action;
+            const actionLabel = getActionLabel(item);
+            
+            return `
+                <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
+                    <strong>${icon} ${actionLabel}</strong>
+                    <p>${description}</p>
+                    ${item.software ? `<p class="timestamp">Tool: ${item.software}</p>` : ''}
+                    ${item.when ? `<p class="timestamp">${item.when}</p>` : ''}
+                </li>
+            `;
+        } else if (item.name === 'Ingredient') {
+            return `
+                <li class="provenance-item verified ${collapsedClass}" ${hiddenClass}>
+                    <strong>📸 Original Image</strong>
+                    <p>Source image with embedded C2PA metadata</p>
+                    ${item.relationship ? `<p class="timestamp">Relationship: ${item.relationship}</p>` : ''}
+                </li>
+            `;
+        } else if (item.verification) {
+            return `
+                <li class="provenance-item ${item.verification === 'Valid' ? 'verified' : ''} ${collapsedClass}" ${hiddenClass}>
+                    <strong>✓ Verification</strong>
+                    <p>${item.verification}</p>
+                    ${item.issuer ? `<p class="timestamp">Issuer: ${item.issuer}</p>` : ''}
+                </li>
+            `;
+        } else if (item.generator) {
+            return `
+                <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
+                    <strong>⚙️ Software</strong>
+                    <p>${item.generator}</p>
+                    ${item.version ? `<p class="timestamp">Version: ${item.version}</p>` : ''}
+                </li>
+            `;
+        } else if (item.author) {
+            return `
+                <li class="provenance-item verified ${collapsedClass}" ${hiddenClass}>
+                    <strong>👤 Author</strong>
+                    <p>${item.author}</p>
+                </li>
+            `;
+        } else if (item.title) {
+            return `
+                <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
+                    <strong>📝 Title</strong>
+                    <p>${item.title}</p>
+                </li>
+            `;
+        }
+        return '';
+    }
+    
+    // Show first item
+    html += renderItem(filteredProvenance[0], false);
+    
+    // Add collapsed middle items (if any)
+    if (shouldCollapse) {
+        const middleCount = totalItems - 2; // All except first and last
+        for (let i = 1; i < totalItems - 1; i++) {
+            html += renderItem(filteredProvenance[i], true);
+        }
+        
+        // Add expand/collapse button
+        html += `
+            <li class="provenance-item expand-toggle" id="provenanceToggle">
+                <button class="expand-btn" onclick="toggleProvenanceExpansion()">
+                    <span>+${middleCount} more entries</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+            </li>
+            <li class="provenance-item collapse-toggle" id="provenanceCollapse" style="display: none;">
+                <button class="expand-btn" onclick="toggleProvenanceExpansion()">
+                    <span>Show less</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                </button>
+            </li>
+        `;
+        
+        // Show last item (Verification)
+        html += renderItem(filteredProvenance[totalItems - 1], false);
+    } else {
+        // Show remaining items (no collapse needed)
+        for (let i = 1; i < totalItems; i++) {
+            html += renderItem(filteredProvenance[i], false);
+        }
+    }
+    
+    provenanceList.innerHTML = html;
+}
+
+function renderAuthorInfo(authorInfo) {
+    console.log('Rendering author info:', authorInfo);
+    
+    // Website
+    const websiteItem = document.getElementById('authorWebsiteItem');
+    const websiteValue = document.getElementById('authorWebsite');
+    if (authorInfo.url && websiteItem && websiteValue) {
+        websiteValue.innerHTML = `<a href="${authorInfo.url}" target="_blank" rel="noopener">${authorInfo.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}</a>`;
+        websiteItem.style.display = 'flex';
+    } else if (websiteItem) {
+        websiteItem.style.display = 'none';
+    }
+    
+    // Email
+    const emailItem = document.getElementById('authorEmailItem');
+    const emailValue = document.getElementById('authorEmail');
+    if (authorInfo.email && emailItem && emailValue) {
+        emailValue.innerHTML = `<a href="mailto:${authorInfo.email}">${authorInfo.email}</a>`;
+        emailItem.style.display = 'flex';
+    } else if (emailItem) {
+        emailItem.style.display = 'none';
+    }
+    
+    // Phone
+    const phoneItem = document.getElementById('authorPhoneItem');
+    const phoneValue = document.getElementById('authorPhone');
+    if (authorInfo.telephone && phoneItem && phoneValue) {
+        phoneValue.textContent = authorInfo.telephone;
+        phoneItem.style.display = 'flex';
+    } else if (phoneItem) {
+        phoneItem.style.display = 'none';
+    }
+    
+    // Job Title
+    const jobItem = document.getElementById('authorJobItem');
+    const jobValue = document.getElementById('authorJob');
+    if (authorInfo.jobTitle && jobItem && jobValue) {
+        jobValue.textContent = authorInfo.jobTitle;
+        jobItem.style.display = 'flex';
+    } else if (jobItem) {
+        jobItem.style.display = 'none';
+    }
+    
+    // Organization
+    const orgItem = document.getElementById('authorOrgItem');
+    const orgValue = document.getElementById('authorOrg');
+    if (authorInfo.worksFor && orgItem && orgValue) {
+        orgValue.textContent = authorInfo.worksFor;
+        orgItem.style.display = 'flex';
+    } else if (orgItem) {
+        orgItem.style.display = 'none';
+    }
+    
+    // Social Media Links
+    const socialContainer = document.getElementById('authorSocial');
+    const socialLinks = document.getElementById('socialLinks');
+    console.log('Social sameAs:', authorInfo.sameAs, 'length:', authorInfo.sameAs?.length);
+    if (authorInfo.sameAs && authorInfo.sameAs.length > 0 && socialContainer && socialLinks) {
+        let socialHtml = '';
+        authorInfo.sameAs.forEach(url => {
+            const platform = getSocialPlatform(url);
+            console.log('Adding social link:', url, 'platform:', platform);
+            socialHtml += `<a href="${url}" target="_blank" rel="noopener" class="social-link ${platform}">${platform}</a>`;
+        });
+        socialLinks.innerHTML = socialHtml;
+        socialContainer.style.display = 'block';
+    } else if (socialContainer) {
+        socialContainer.style.display = 'none';
+    }
+}
+
+function getSocialPlatform(url) {
+    const domain = url.toLowerCase();
+    if (domain.includes('instagram')) return 'instagram';
+    if (domain.includes('twitter') || domain.includes('x.com')) return 'twitter';
+    if (domain.includes('facebook')) return 'facebook';
+    if (domain.includes('linkedin')) return 'linkedin';
+    if (domain.includes('youtube')) return 'youtube';
+    if (domain.includes('tiktok')) return 'tiktok';
+    if (domain.includes('behance')) return 'behance';
+    if (domain.includes('dribbble')) return 'dribbble';
+    if (domain.includes('github')) return 'github';
+    if (domain.includes('flickr')) return 'flickr';
+    if (domain.includes('500px')) return '500px';
+    if (domain.includes('unsplash')) return 'unsplash';
+    return 'website';
 }
 
 function renderProvenance(metadata) {
@@ -400,8 +596,11 @@ async function renderSourceThumbnail(uri) {
         sourceImage.src = `data:image/jpeg;base64,${thumbnails.ingredient_thumbnail}`;
         sourceImage.style.display = 'block';
         
-        const sourceLabel = document.querySelector('#sourceImage').previousElementSibling;
-        sourceLabel.style.display = 'block';
+        // Hide placeholder if exists
+        const placeholder = document.getElementById('thumbnailPlaceholder');
+        if (placeholder) {
+            placeholder.style.display = 'none';
+        }
         
         // Ensure thumbnail is centered within container
         sourceImage.addEventListener('load', function() {
@@ -411,14 +610,102 @@ async function renderSourceThumbnail(uri) {
         const sourceImage = document.getElementById('sourceImage');
         sourceImage.style.display = 'none';
         
-        const sourceLabel = document.querySelector('#sourceImage').previousElementSibling;
-        sourceLabel.style.display = 'none';
+        // Show placeholder if exists
+        const placeholder = document.getElementById('thumbnailPlaceholder');
+        if (placeholder) {
+            placeholder.style.display = 'flex';
+        }
     }
+}
+
+function clearAllMetadata() {
+    // Clear Image Overview
+    const sourceImage = document.getElementById('sourceImage');
+    const thumbnailPlaceholder = document.getElementById('thumbnailPlaceholder');
+    const filename = document.getElementById('filename');
+    const overviewDimensions = document.getElementById('overviewDimensions');
+    const overviewFileSize = document.getElementById('overviewFileSize');
+    
+    if (sourceImage) {
+        sourceImage.src = '';
+        sourceImage.style.display = 'none';
+    }
+    if (thumbnailPlaceholder) {
+        thumbnailPlaceholder.style.display = 'flex';
+    }
+    if (filename) {
+        filename.textContent = '';
+    }
+    if (overviewDimensions) {
+        overviewDimensions.textContent = '';
+    }
+    if (overviewFileSize) {
+        overviewFileSize.textContent = '';
+    }
+    
+    // Clear Technical Details
+    const fields = ['cameraMake', 'cameraModel', 'lensModel', 'exposureMode', 'whiteBalance', 
+                   'flash', 'aperture', 'shutterSpeed', 'iso', 'focalLength', 'resolution',
+                   'dimensions', 'colorSpace', 'colorProfile', 'software'];
+    fields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '';
+    });
+    
+    // Clear Creator Information
+    const artist = document.getElementById('artist');
+    const dateOriginal = document.getElementById('dateOriginal');
+    const dateDigitized = document.getElementById('dateDigitized');
+    const gpsCoordinates = document.getElementById('gpsCoordinates');
+    const gpsItem = document.getElementById('gpsItem');
+    
+    if (artist) artist.textContent = '';
+    if (dateOriginal) dateOriginal.textContent = '';
+    if (dateDigitized) dateDigitized.textContent = '';
+    if (gpsCoordinates) gpsCoordinates.textContent = '';
+    if (gpsItem) gpsItem.style.display = 'none';
+    
+    // Clear Author contact info
+    const authorFields = ['authorWebsite', 'authorEmail', 'authorPhone', 'authorJob', 'authorOrg'];
+    const authorItems = ['authorWebsiteItem', 'authorEmailItem', 'authorPhoneItem', 'authorJobItem', 'authorOrgItem'];
+    
+    authorFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '';
+    });
+    authorItems.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+    
+    // Clear Social Media
+    const socialLinks = document.getElementById('socialLinks');
+    const authorSocial = document.getElementById('authorSocial');
+    if (socialLinks) socialLinks.innerHTML = '';
+    if (authorSocial) authorSocial.style.display = 'none';
+    
+    // Clear Provenance
+    const provenanceList = document.getElementById('provenanceList');
+    const provenanceEmpty = document.getElementById('provenanceEmpty');
+    if (provenanceList) {
+        provenanceList.innerHTML = '';
+        provenanceList.style.display = 'none';
+    }
+    if (provenanceEmpty) {
+        provenanceEmpty.style.display = 'flex';
+    }
+    
+    // Clear Description
+    const imageDescription = document.getElementById('imageDescription');
+    if (imageDescription) imageDescription.textContent = '';
 }
 
 async function uploadImageFile(file) {
     const formData = new FormData();
     formData.append('file', file);
+    
+    // Clear previous metadata before loading new image
+    clearAllMetadata();
     
     showLoading();
     
@@ -447,54 +734,49 @@ async function uploadImageFile(file) {
         const dragDropZone = document.getElementById('dragDropZone');
         dragDropZone.classList.add('hidden');
         
-        // Remove placeholder and show sidebar sections
-        const placeholder = document.getElementById('sidebarPlaceholder');
-        if (placeholder) {
-            placeholder.remove();
-        }
-        const sidebarContent = document.querySelector('.sidebar-content');
-        const sections = sidebarContent.querySelectorAll('.thumbnail-section, .provenance-section, .metadata-grid, .description-section');
-        sections.forEach(section => {
-            section.style.display = 'block';
-        });
-        
         // Show filename
         const filenameElement = document.getElementById('filename');
-        filenameElement.textContent = metadata.filename;
-        filenameElement.style.display = 'block';
+        if (filenameElement) {
+            filenameElement.textContent = metadata.filename || 'Unknown';
+        }
         
         hideLoading();
         
-        // Render metadata
-        renderPhotographyMetadata(metadata);
-        renderExifMetadata(metadata);
-        renderGPSMetadata(metadata);
-        renderIPTCMetadata(metadata);
-        
-        // Load and display C2PA metadata
-        // For uploaded files, we need to handle differently - let's check if we have thumbnails
-        if (metadata.thumbnails) {
-            // Display ingredient thumbnail if available
-            if (metadata.thumbnails.ingredient_thumbnail) {
-                const sourceImage = document.getElementById('sourceImage');
-                sourceImage.src = `data:image/jpeg;base64,${metadata.thumbnails.ingredient_thumbnail}`;
-                sourceImage.style.display = 'block';
-                
-                const sourceLabel = document.querySelector('#sourceImage').previousElementSibling;
-                sourceLabel.style.display = 'block';
-                
-                sourceImage.addEventListener('load', function() {
-                    this.style.margin = '0 auto';
-                });
-            }
-            
+        // Render metadata - this will "bring to life" the empty fields
+        try {
+            renderPhotographyMetadata(metadata);
+            renderExifMetadata(metadata);
+            renderGPSMetadata(metadata);
+            renderIPTCMetadata(metadata);
+        } catch (renderError) {
+            console.error('Error rendering metadata:', renderError);
         }
         
+        // Update Content Credentials status
+        const hasProvenance = metadata.provenance && metadata.provenance.length > 0;
+        updateC2PAStatus(hasProvenance, metadata.provenance?.length || 0);
+        
         // Render C2PA provenance data from upload response
-        if (metadata.provenance && metadata.provenance.length > 0) {
+        if (hasProvenance) {
             renderC2PAMetadata(metadata.provenance, true);
         } else {
             renderC2PAMetadata(null, false);
+        }
+        
+        // Load and display C2PA metadata
+        if (metadata.thumbnails && metadata.thumbnails.ingredient_thumbnail) {
+            const sourceImage = document.getElementById('sourceImage');
+            sourceImage.src = `data:image/jpeg;base64,${metadata.thumbnails.ingredient_thumbnail}`;
+            sourceImage.style.display = 'block';
+            
+            const placeholder = document.getElementById('thumbnailPlaceholder');
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+            
+            sourceImage.addEventListener('load', function() {
+                this.style.margin = '0 auto';
+            });
         }
         
     } catch (error) {
@@ -509,18 +791,30 @@ function setupDragAndDrop() {
     const dragDropZone = document.getElementById('dragDropZone');
     const fileInput = document.getElementById('fileInput');
     
-    // Prevent default drag behaviors
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, preventDefaults, false);
-        document.body.addEventListener(eventName, preventDefaults, false);
-    });
+    if (!dropZone || !dragDropZone || !fileInput) {
+        console.error('Required elements not found for drag and drop');
+        return;
+    }
     
+    // Prevent default drag behaviors on the whole document
     function preventDefaults(e) {
         e.preventDefault();
         e.stopPropagation();
     }
     
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+    
     // Highlight drop zone when dragging over
+    function highlight(e) {
+        dragDropZone.classList.add('dragover');
+    }
+    
+    function unhighlight(e) {
+        dragDropZone.classList.remove('dragover');
+    }
+    
     ['dragenter', 'dragover'].forEach(eventName => {
         dropZone.addEventListener(eventName, highlight, false);
     });
@@ -529,34 +823,34 @@ function setupDragAndDrop() {
         dropZone.addEventListener(eventName, unhighlight, false);
     });
     
-    function highlight() {
-        dragDropZone.classList.add('dragover');
-    }
-    
-    function unhighlight() {
-        dragDropZone.classList.remove('dragover');
-    }
-    
     // Handle dropped files
-    dropZone.addEventListener('drop', handleDrop, false);
-    
     function handleDrop(e) {
         const dt = e.dataTransfer;
-        const files = Array.from(dt.files);
+        const files = dt.files;
         
         if (files.length > 0 && files[0].type.startsWith('image/')) {
             uploadImageFile(files[0]);
-        } else {
+        } else if (files.length > 0) {
             displayError('Please select a valid image file');
         }
     }
     
-    // Handle file selection - the label naturally triggers the input
+    dropZone.addEventListener('drop', handleDrop, false);
+    
+    // Handle file selection via button
     fileInput.addEventListener('change', function(e) {
-        console.log('File input change event');
+        console.log('File input change event triggered');
         if (e.target.files && e.target.files.length > 0) {
-            console.log('File selected:', e.target.files[0]);
+            console.log('File selected:', e.target.files[0].name);
             uploadImageFile(e.target.files[0]);
+        }
+    });
+    
+    // Also allow clicking anywhere on the drag-drop zone to trigger file input
+    dragDropZone.addEventListener('click', function(e) {
+        // Don't trigger if clicking the select button itself (it has its own label behavior)
+        if (!e.target.closest('.select-file-btn')) {
+            fileInput.click();
         }
     });
 }
@@ -568,22 +862,8 @@ async function init() {
         // Show drag and drop zone
         setupDragAndDrop();
         
-        // Hide sidebar metadata sections (don't replace content)
-        const sidebarContent = document.querySelector('.sidebar-content');
-        const sections = sidebarContent.querySelectorAll('.thumbnail-section, .provenance-section, .metadata-grid, .description-section');
-        sections.forEach(section => {
-            section.style.display = 'none';
-        });
-        
-        // Add placeholder message
-        const placeholder = document.createElement('div');
-        placeholder.id = 'sidebarPlaceholder';
-        placeholder.style.cssText = 'padding: 2rem; text-align: center; color: #666;';
-        placeholder.innerHTML = `
-            <h3 style="margin-bottom: 1rem;">No Image Selected</h3>
-            <p>Drop an image here or click to select</p>
-        `;
-        sidebarContent.insertBefore(placeholder, sidebarContent.firstChild);
+        // Sidebar now shows empty template with em-dashes by default
+        // No placeholder needed - all sections visible with empty state
         
         return;
     }
@@ -620,8 +900,10 @@ async function init() {
             // Load and display C2PA metadata
             const c2paProvenance = await loadC2PAMetadataFromApi(params.imageUri);
             if (c2paProvenance && c2paProvenance.length > 0) {
+                updateC2PAStatus(true, c2paProvenance.length);
                 renderC2PAMetadata(c2paProvenance, true);
             } else {
+                updateC2PAStatus(false, 0);
                 renderC2PAMetadata(null, false);
             }
             
@@ -634,8 +916,31 @@ async function init() {
     }
 }
 
+// Theme Management
+function initTheme() {
+    const themeToggle = document.getElementById('themeToggle');
+    const html = document.documentElement;
+
+    // Load saved theme or default to light
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    html.setAttribute('data-theme', savedTheme);
+
+    // Toggle theme on button click
+    themeToggle.addEventListener('click', () => {
+        const currentTheme = html.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+    });
+}
+
+// Initialize theme when DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', () => {
+        initTheme();
+        init();
+    });
 } else {
+    initTheme();
     init();
 }

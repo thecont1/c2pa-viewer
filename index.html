@@ -10,6 +10,24 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Theme Toggle Button -->
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+        <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+    </button>
+
     <div class="container">
         <!-- Main Image Area -->
         <div class="main-content" id="dropZone">
@@ -20,13 +38,25 @@
             <!-- Drag and Drop Zone -->
             <div id="dragDropZone" class="drag-drop-zone">
                 <div class="drag-drop-content">
-                    <div class="drag-drop-icon">📁</div>
-                    <h2>Drop an image here</h2>
-                    <p>or click to select a file</p>
+                    <div class="drag-drop-icon-wrapper">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <h2>Drop your image here</h2>
+                    <p>Drag and drop an image to verify its Content Credentials</p>
+                    <div class="drag-drop-or">or</div>
                     <label for="fileInput" class="select-file-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                        </svg>
                         Select Image File
-                        <input type="file" id="fileInput" accept="image/*" style="display: none;">
                     </label>
+                    <input type="file" id="fileInput" accept="image/*" hidden>
+                    <p class="supported-formats">Supports JPEG, PNG, TIFF, and WebP with C2PA metadata</p>
                 </div>
             </div>
         </div>
@@ -40,133 +70,221 @@
             </div>
             
             <div class="sidebar-content">
-                <!-- Thumbnail Section -->
-                <div class="thumbnail-section">
-                    <div class="thumbnail-container">
-                        <span class="thumbnail-label">Original Image</span>
-                        <img id="sourceImage" class="thumbnail" src="" alt="Original Image Thumbnail" style="display: none;">
-                        <p id="filename" class="thumbnail-filename" style="display: none;"></p>
+                <!-- Content Credentials Status - Most Important -->
+                <div class="cc-status-section" id="ccStatusSection">
+                    <div class="cc-status-card cc-status-empty" id="ccStatusCard">
+                        <div class="cc-status-header">
+                            <div class="cc-status-icon" id="ccStatusIcon"></div>
+                            <div class="cc-status-title">
+                                <span class="cc-status-label" id="ccStatusLabel">Content Credentials</span>
+                                <span class="cc-status-value" id="ccStatusValue"></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Provenance Section -->
+                <!-- Image Overview -->
+                <div class="overview-section thumbnail-section">
+                    <div class="overview-header">
+                        <h2 class="section-title">Source Image</h2>
+                        <span class="file-badge" id="fileFormatBadge"></span>
+                    </div>
+                    <div class="overview-content">
+                        <div class="thumbnail-container">
+                            <img id="sourceImage" class="thumbnail" src="" alt="Original Image Thumbnail" style="display: none;">
+                            <div class="thumbnail-placeholder" id="thumbnailPlaceholder">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                                    <polyline points="21 15 16 10 5 21"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="overview-meta">
+                            <p id="filename" class="filename thumbnail-filename"></p>
+                            <p class="dimensions" id="overviewDimensions"></p>
+                            <p class="filesize" id="overviewFileSize"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Provenance Timeline -->
                 <div class="provenance-section">
-                    <h2>Provenance History</h2>
-                    <ul class="provenance-list" id="provenanceList">
-                        <!-- Will be populated by JavaScript -->
-                    </ul>
-                </div>
-
-                <!-- Photography Metadata Section -->
-                <div class="metadata-grid">
-                    <div class="metadata-section">
-                        <h2>Camera & Lens</h2>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Camera Make</span>
-                            <span class="metadata-value" id="cameraMake"></span>
+                    <h2 class="section-title">Provenance History</h2>
+                    <div class="provenance-timeline" id="provenanceTimeline">
+                        <div class="timeline-empty" id="provenanceEmpty">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="12"/>
+                                <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            <p>No provenance information available</p>
                         </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Camera Model</span>
-                            <span class="metadata-value" id="cameraModel"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Lens Model</span>
-                            <span class="metadata-value" id="lensModel"></span>
-                        </div>
-                    </div>
-
-                    <div class="metadata-section">
-                        <h2>Camera Settings</h2>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Aperture</span>
-                            <span class="metadata-value" id="aperture"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Shutter Speed</span>
-                            <span class="metadata-value" id="shutterSpeed"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">ISO Sensitivity</span>
-                            <span class="metadata-value" id="iso"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Focal Length</span>
-                            <span class="metadata-value" id="focalLength"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Exposure Mode</span>
-                            <span class="metadata-value" id="exposureMode"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Flash</span>
-                            <span class="metadata-value" id="flash"></span>
-                        </div>
-                    </div>
-
-                    <div class="metadata-section">
-                        <h2>Image Details</h2>
-                        <div class="metadata-item">
-                            <span class="metadata-label">File Format</span>
-                            <span class="metadata-value" id="format"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Resolution</span>
-                            <span class="metadata-value" id="resolution"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Dimensions</span>
-                            <span class="metadata-value" id="dimensions"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Color Space</span>
-                            <span class="metadata-value" id="colorSpace"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Color Profile</span>
-                            <span class="metadata-value" id="colorProfile"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">File Size</span>
-                            <span class="metadata-value" id="fileSize"></span>
-                        </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Software</span>
-                            <span class="metadata-value" id="software"></span>
-                        </div>
+                        <ul class="provenance-list" id="provenanceList" style="display: none;">
+                            <!-- Populated by JavaScript -->
+                        </ul>
                     </div>
                 </div>
 
-                <!-- IPTC & Description Section -->
-                <div class="description-section">
-                    <h2>Image Description & Information</h2>
-                    <p class="description" id="description"></p>
+                <!-- Technical Information -->
+                <div class="technical-section metadata-grid">
+                    <h2 class="section-title">Technical Details</h2>
+                    
+                    <!-- Camera & Lens -->
+                    <div class="tech-group metadata-section">
+                        <h3 class="tech-group-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                                <circle cx="12" cy="13" r="4"/>
+                            </svg>
+                            Camera & Lens
+                        </h3>
+                        <div class="tech-grid">
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Camera Make</span>
+                                <span class="tech-value metadata-value" id="cameraMake"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Camera Model</span>
+                                <span class="tech-value metadata-value" id="cameraModel"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Lens</span>
+                                <span class="tech-value metadata-value" id="lensModel"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Exposure Settings -->
+                    <div class="tech-group metadata-section">
+                        <h3 class="tech-group-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.24 4.24l-4.24-4.24M6.34 6.34L2.1 2.1"/>
+                            </svg>
+                            Exposure Settings
+                        </h3>
+                        <div class="tech-grid">
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Exposure Mode</span>
+                                <span class="tech-value metadata-value" id="exposureMode"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">White Balance</span>
+                                <span class="tech-value metadata-value" id="whiteBalance"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Flash</span>
+                                <span class="tech-value metadata-value" id="flash"></span>
+                            </div>
+                        </div>
+                        <div class="tech-grid">
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Aperture</span>
+                                <span class="tech-value metadata-value" id="aperture"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Shutter</span>
+                                <span class="tech-value metadata-value" id="shutterSpeed"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">ISO</span>
+                                <span class="tech-value metadata-value" id="iso"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Focal Length</span>
+                                <span class="tech-value metadata-value" id="focalLength"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Image Properties -->
+                    <div class="tech-group metadata-section">
+                        <h3 class="tech-group-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="8" y1="12" x2="16" y2="12"/>
+                                <line x1="12" y1="8" x2="12" y2="16"/>
+                            </svg>
+                            Image Properties
+                        </h3>
+                        <div class="tech-grid">
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Resolution</span>
+                                <span class="tech-value metadata-value" id="resolution"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Dimensions</span>
+                                <span class="tech-value metadata-value" id="dimensions"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Color Space</span>
+                                <span class="tech-value metadata-value" id="colorSpace"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Color Profile</span>
+                                <span class="tech-value metadata-value" id="colorProfile"></span>
+                            </div>
+                            <div class="tech-item metadata-item">
+                                <span class="tech-label metadata-label">Software</span>
+                                <span class="tech-value metadata-value" id="software"></span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Additional Details -->
-                <div class="metadata-grid" style="margin-top: 1.5rem;">
-                    <div class="metadata-section">
-                        <h2>Photographer Information</h2>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Artist</span>
-                            <span class="metadata-value" id="artist"></span>
+                <!-- Creator Information -->
+                <div class="creator-section metadata-grid">
+                    <h2 class="section-title">Creator Information</h2>
+                    <div class="creator-grid">
+                        <div class="creator-item metadata-item">
+                            <span class="creator-label metadata-label">Artist</span>
+                            <span class="creator-value metadata-value" id="artist"></span>
                         </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Capture Date</span>
-                            <span class="metadata-value" id="dateOriginal"></span>
+                        <div class="creator-item metadata-item" id="authorWebsiteItem" style="display: none;">
+                            <span class="creator-label metadata-label">Website</span>
+                            <span class="creator-value metadata-value" id="authorWebsite"></span>
                         </div>
-                        <div class="metadata-item">
-                            <span class="metadata-label">Digitized Date</span>
-                            <span class="metadata-value" id="dateDigitized"></span>
+                        <div class="creator-item metadata-item" id="authorEmailItem" style="display: none;">
+                            <span class="creator-label metadata-label">Email</span>
+                            <span class="creator-value metadata-value" id="authorEmail"></span>
+                        </div>
+                        <div class="creator-item metadata-item" id="authorPhoneItem" style="display: none;">
+                            <span class="creator-label metadata-label">Phone</span>
+                            <span class="creator-value metadata-value" id="authorPhone"></span>
+                        </div>
+                        <div class="creator-item metadata-item" id="authorJobItem" style="display: none;">
+                            <span class="creator-label metadata-label">Title</span>
+                            <span class="creator-value metadata-value" id="authorJob"></span>
+                        </div>
+                        <div class="creator-item metadata-item" id="authorOrgItem" style="display: none;">
+                            <span class="creator-label metadata-label">Organization</span>
+                            <span class="creator-value metadata-value" id="authorOrg"></span>
+                        </div>
+                        <div class="creator-social" id="authorSocial" style="display: none;">
+                            <span class="creator-label metadata-label">Social Media</span>
+                            <div class="social-links" id="socialLinks"></div>
+                        </div>
+                        <div class="creator-item metadata-item">
+                            <span class="creator-label metadata-label">Captured</span>
+                            <span class="creator-value metadata-value" id="dateOriginal"></span>
+                        </div>
+                        <div class="creator-item metadata-item">
+                            <span class="creator-label metadata-label">Digitized</span>
+                            <span class="creator-value metadata-value" id="dateDigitized"></span>
+                        </div>
+                        <div class="creator-item metadata-item" id="gpsItem" style="display: none;">
+                            <span class="creator-label metadata-label">Location</span>
+                            <span class="creator-value metadata-value" id="gpsCoordinates"></span>
                         </div>
                     </div>
+                </div>
 
-                    <div class="metadata-section">
-                        <h2>Location</h2>
-                        <div class="metadata-item">
-                            <span class="metadata-label">GPS Coordinates</span>
-                            <span class="metadata-value" id="gpsCoordinates"></span>
-                        </div>
-                    </div>
+                <!-- Description -->
+                <div class="description-section metadata-section">
+                    <h3 class="tech-group-title">Description</h3>
+                    <p class="description-text" id="imageDescription"></p>
+                    <div class="keywords-list" id="keywordsList"></div>
                 </div>
             </div>
         </div>

@@ -453,43 +453,75 @@ def format_provenance_for_web(c2pa_data):
             'name': 'Issued On',
             'date': format_datetime_full(sig_info['time'], include_timezone=True)
         })
-    
-    # Extract textual metadata from author_info (CreativeWork assertion)
-    author_info = c2pa_data.get('author_info', {})
-    
-    # Title
-    if 'name' in author_info:
-        provenance.append({
-            'name': 'Title',
-            'title': author_info['name']
-        })
-    
-    # Description
-    if 'description' in author_info:
-        provenance.append({
-            'name': 'Description',
-            'data': author_info['description']
-        })
-    
-    # Keywords
-    if 'keywords' in author_info:
-        keywords = author_info['keywords']
-        if isinstance(keywords, list):
-            keywords = ', '.join(keywords)
-        provenance.append({
-            'name': 'Keywords',
-            'data': keywords
-        })
-    
-    # Author
-    if 'author' in author_info:
-        authors = author_info['author']
-        if isinstance(authors, list) and len(authors) > 0:
-            author_name = authors[0].get('name', 'Unknown')
+        
+        # Extract textual metadata from author_info (CreativeWork assertion)
+        author_info = c2pa_data.get('author_info', {})
+        
+        # Title
+        if 'name' in author_info:
             provenance.append({
-                'name': 'Author',
-                'author': author_name
+                'name': 'Title',
+                'title': author_info['name']
             })
+        
+        # Description
+        if 'description' in author_info:
+            provenance.append({
+                'name': 'Description',
+                'data': author_info['description']
+            })
+        
+        # Keywords
+        if 'keywords' in author_info:
+            keywords = author_info['keywords']
+            if isinstance(keywords, list):
+                keywords = ', '.join(keywords)
+            provenance.append({
+                'name': 'Keywords',
+                'data': keywords
+            })
+        
+        # Author with full details including social media
+        if 'author' in author_info:
+            authors = author_info['author']
+            if isinstance(authors, list) and len(authors) > 0:
+                author = authors[0]
+                author_data = {
+                    'name': author.get('name', 'Unknown'),
+                    'identifier': author.get('identifier'),
+                    'url': author.get('url'),
+                    'sameAs': author.get('sameAs', []),
+                    'email': author.get('email'),
+                    'telephone': author.get('telephone'),
+                    'address': author.get('address'),
+                    'jobTitle': author.get('jobTitle'),
+                    'worksFor': author.get('worksFor', {}).get('name') if isinstance(author.get('worksFor'), dict) else author.get('worksFor')
+                }
+                provenance.append({
+                    'name': 'Author',
+                    'author': author_data['name'],
+                    'author_details': author_data
+                })
+        
+        # Copyright holder
+        if 'copyrightHolder' in author_info:
+            holders = author_info['copyrightHolder']
+            if isinstance(holders, list) and len(holders) > 0:
+                holder_name = holders[0].get('name', 'Unknown')
+                provenance.append({
+                    'name': 'Copyright',
+                    'copyright': holder_name
+                })
+        
+        # Publisher
+        if 'publisher' in author_info:
+            publisher = author_info['publisher']
+            if isinstance(publisher, dict):
+                publisher_name = publisher.get('name', 'Unknown')
+                provenance.append({
+                    'name': 'Publisher',
+                    'publisher': publisher_name
+                })
     
     # Actions with timezone-aware timestamps
     for action in c2pa_data.get('actions', []):
