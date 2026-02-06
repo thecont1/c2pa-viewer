@@ -39,10 +39,11 @@ async function extractParamsFromUrl() {
 }
 
 async function loadMetadataFromApi(uri) {
+    const baseUrl = window.location.origin;
     console.log('Loading metadata from URI:', uri);
     
     try {
-        const response = await fetch(`http://localhost:8080/api/metadata?uri=${encodeURIComponent(uri)}`);
+        const response = await fetch(`${baseUrl}/api/metadata?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -59,8 +60,9 @@ async function loadMetadataFromApi(uri) {
 }
 
 async function loadThumbnailsFromApi(uri) {
+    const baseUrl = window.location.origin;
     try {
-        const response = await fetch(`http://localhost:8080/api/extract_thumbnails?uri=${encodeURIComponent(uri)}`);
+        const response = await fetch(`${baseUrl}/api/thumbnails?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             return null;
         }
@@ -294,7 +296,8 @@ function renderExifMetadata(metadata) {
 
 async function loadC2PAMetadataFromApi(uri) {
     try {
-        const response = await fetch(`http://localhost:8080/api/c2pa_metadata?uri=${encodeURIComponent(uri)}`);
+        const baseUrl = window.location.origin;
+        const response = await fetch(`${baseUrl}/api/c2pa_metadata?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             return null;
         }
@@ -729,7 +732,7 @@ async function uploadImageFile(file) {
     showLoading();
     
     try {
-        const response = await fetch('http://localhost:8080/api/upload', {
+        const response = await fetch(`${window.location.origin}/api/upload`, {
             method: 'POST',
             body: formData
         });
@@ -909,9 +912,16 @@ async function init() {
             
             // Show filename under source thumbnail and update title header
             const filenameElement = document.getElementById('filename');
+<<<<<<< Updated upstream
             filenameElement.textContent = metadata.filename;
             filenameElement.style.display = 'block';
             updateImageTitle(metadata.filename);
+=======
+            if (filenameElement) {
+                filenameElement.textContent = metadata.filename;
+                filenameElement.style.display = 'block';
+            }
+>>>>>>> Stashed changes
             
             hideLoading();
             renderPhotographyMetadata(metadata);
