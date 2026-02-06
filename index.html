@@ -10,24 +10,6 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Theme Toggle Button -->
-    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
-        <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="5"/>
-            <line x1="12" y1="1" x2="12" y2="3"/>
-            <line x1="12" y1="21" x2="12" y2="23"/>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-            <line x1="1" y1="12" x2="3" y2="12"/>
-            <line x1="21" y1="12" x2="23" y2="12"/>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-        </svg>
-        <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-        </svg>
-    </button>
-
     <div class="container">
         <!-- Main Image Area -->
         <div class="main-content full-drop-zone" id="dropZone">
@@ -40,16 +22,11 @@
                 <div class="welcome-content">
                     <img src="content_credentials_logo.svg" alt="Content Credentials" class="cc-logo-large">
                     <p class="welcome-tagline">Verify the authenticity and provenance of any image</p>
-                    <p class="welcome-instruction">Drop an image anywhere to inspect its Content Credentials</p>
+                    <p class="welcome-instruction">Drop an image anywhere</p>
                     or <label for="fileInput" class="select-file-link">select a file</label>
                     <input type="file" id="fileInput" accept="image/*" hidden>
                     
                     <div class="cc-info">
-                        <p class="cc-info-text">
-                            <strong>Content Credentials</strong> are a digital nutrition label for images — 
-                            showing who created them, how they were made, and what was changed along the way. 
-                            This helps combat misinformation and gives creators proper credit.
-                        </p>
                         <a href="https://contentcredentials.org/about/" target="_blank" rel="noopener" class="cc-learn-more">
                             Learn more about Content Credentials →
                         </a>
@@ -60,12 +37,49 @@
 
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="sidebar-header">
-                <a href="https://contentcredentials.org/about/" target="_blank">
-                    <img src="content_credentials_logo.svg" alt="Content Credentials Logo" class="sidebar-logo">
+            <div class="sidebar-toolbar">
+                <div class="toolbar-buttons">
+                    <button class="toolbar-btn" id="resetBtn" aria-label="Reset to welcome page">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M7 6a7.75 7.75 0 1 0 10 0" />
+                            <path d="M12 4l0 8" />
+                        </svg>
+                    </button>
+                    <button class="toolbar-btn" id="themeToggle" aria-label="Toggle theme">
+                        <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="5"/>
+                            <line x1="12" y1="1" x2="12" y2="3"/>
+                            <line x1="12" y1="21" x2="12" y2="23"/>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                            <line x1="1" y1="12" x2="3" y2="12"/>
+                            <line x1="21" y1="12" x2="23" y2="12"/>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                        </svg>
+                        <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                        </svg>
+                    </button>
+                    <button class="toolbar-btn" id="infoBtn" aria-label="About this app">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="16" x2="12" y2="12"/>
+                            <line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                    </button>
+                </div>
+                <a href="https://contentcredentials.org/about/" target="_blank" class="toolbar-logo-link">
+                    <img src="content_credentials_logo.svg" alt="Content Credentials Logo" class="toolbar-logo">
                 </a>
             </div>
             
+            <!-- Image Title Header -->
+            <div class="image-title-header" id="imageTitleHeader">
+                <h1 class="image-title" id="imageTitle"></h1>
+                <p class="image-caption" id="imageCaption"></p>
+            </div>
+                
             <div class="sidebar-content">
                 <!-- Content Credentials Status - Most Important -->
                 <div class="cc-status-section" id="ccStatusSection">
@@ -98,7 +112,6 @@
                             </div>
                         </div>
                         <div class="overview-meta">
-                            <p id="filename" class="filename thumbnail-filename"></p>
                             <p class="dimensions" id="overviewDimensions"></p>
                             <p class="filesize" id="overviewFileSize"></p>
                         </div>
@@ -283,6 +296,49 @@
                     <p class="description-text" id="imageDescription"></p>
                     <div class="keywords-list" id="keywordsList"></div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal-overlay" id="aboutModal">
+        <div class="modal-content">
+            <button class="modal-close" id="modalClose" aria-label="Close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+            <div class="modal-header">
+                <img src="content_credentials_logo.svg" alt="Content Credentials" class="modal-logo">
+                <h2>About This App</h2>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">
+                    This tool helps you verify the authenticity and provenance of images through <strong>Content Credentials</strong> — 
+                    a digital nutrition label for visual content that shows who created an image, how it was made, 
+                    and what changes were made along the way.
+                </p>
+                
+                <h3>What are Content Credentials?</h3>
+                <p>
+                    Content Credentials are an open standard developed by the Coalition for Content Provenance and Authenticity (C2PA). 
+                    They embed tamper-evident metadata into images to combat misinformation and ensure proper attribution for creators.
+                </p>
+                
+                <h3>How to Use</h3>
+                <ul>
+                    <li>Drop any image onto the viewer to inspect its Content Credentials</li>
+                    <li>View the provenance history to see editing steps and tools used</li>
+                    <li>Check technical metadata like camera settings and location data</li>
+                    <li>Verify the authenticity of images before sharing</li>
+                </ul>
+                
+                <h3>About the Creator</h3>
+                <p>
+                    This viewer was built as an educational tool to help people understand and verify image provenance. 
+                    For more information, visit <a href="https://contentcredentials.org/about/" target="_blank">contentcredentials.org</a>.
+                </p>
             </div>
         </div>
     </div>

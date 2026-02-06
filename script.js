@@ -363,7 +363,7 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
     }
     
     const totalItems = filteredProvenance.length;
-    const shouldCollapse = totalItems > 2; // Need at least 3 items to collapse (first, middle(s), last)
+    const shouldCollapse = totalItems >= 6; // Need at least 6 items to show collapse button
     
     let html = '';
     
@@ -405,9 +405,23 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
         } else if (item.generator) {
             return `
                 <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
-                    <strong>⚙️ Software</strong>
+                    <strong>⚙️ Claim Generator</strong>
                     <p>${item.generator}</p>
                     ${item.version ? `<p class="timestamp">Version: ${item.version}</p>` : ''}
+                </li>
+            `;
+        } else if (item.issuer && item.name === 'Issued By') {
+            return `
+                <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
+                    <strong>🏛️ Issued By</strong>
+                    <p>${item.issuer}</p>
+                </li>
+            `;
+        } else if (item.date && item.name === 'Issued On') {
+            return `
+                <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
+                    <strong>📅 Issued On</strong>
+                    <p>${item.date}</p>
                 </li>
             `;
         } else if (item.author) {
@@ -428,13 +442,17 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
         return '';
     }
     
-    // Show first item
-    html += renderItem(filteredProvenance[0], false);
+    // Show first 3 items (or all if less than 6)
+    const visibleCount = shouldCollapse ? 3 : totalItems;
+    for (let i = 0; i < visibleCount && i < totalItems - 1; i++) {
+        html += renderItem(filteredProvenance[i], false);
+    }
     
-    // Add collapsed middle items (if any)
+    // Add collapsed middle items and collapse button (if needed)
     if (shouldCollapse) {
-        const middleCount = totalItems - 2; // All except first and last
-        for (let i = 1; i < totalItems - 1; i++) {
+        // Hidden count = total - 4 (first 3 visible + Verification visible)
+        const hiddenCount = totalItems - 4;
+        for (let i = 3; i < totalItems - 1; i++) {
             html += renderItem(filteredProvenance[i], true);
         }
         
@@ -442,7 +460,7 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
         html += `
             <li class="provenance-item expand-toggle" id="provenanceToggle">
                 <button class="expand-btn" onclick="toggleProvenanceExpansion()">
-                    <span>+${middleCount} more entries</span>
+                    <span>+${hiddenCount} more entries</span>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="6 9 12 15 18 9"></polyline>
                     </svg>
@@ -636,6 +654,7 @@ function clearAllMetadata() {
     if (filename) {
         filename.textContent = '';
     }
+    updateImageTitle(null);
     if (overviewDimensions) {
         overviewDimensions.textContent = '';
     }
@@ -734,11 +753,12 @@ async function uploadImageFile(file) {
         const dragDropZone = document.getElementById('dragDropZone');
         dragDropZone.classList.add('hidden');
         
-        // Show filename
+        // Show filename and update title header
         const filenameElement = document.getElementById('filename');
         if (filenameElement) {
             filenameElement.textContent = metadata.filename || 'Unknown';
         }
+        updateImageTitle(metadata.filename);
         
         hideLoading();
         
@@ -846,13 +866,8 @@ function setupDragAndDrop() {
         }
     });
     
-    // Also allow clicking anywhere on the drag-drop zone to trigger file input
-    dragDropZone.addEventListener('click', function(e) {
-        // Don't trigger if clicking the select button, label, or any link
-        if (!e.target.closest('.select-file-btn') && !e.target.closest('.select-file-link') && !e.target.closest('a')) {
-            fileInput.click();
-        }
-    });
+    // Note: Clicking on the "select a file" label will trigger the file input
+    // via the label's "for" attribute. Drag and drop still works anywhere.
 }
 
 async function init() {
@@ -892,10 +907,11 @@ async function init() {
                 c2paVerificationContainer.style.display = 'block';
             }
             
-            // Show filename under source thumbnail
+            // Show filename under source thumbnail and update title header
             const filenameElement = document.getElementById('filename');
             filenameElement.textContent = metadata.filename;
             filenameElement.style.display = 'block';
+            updateImageTitle(metadata.filename);
             
             hideLoading();
             renderPhotographyMetadata(metadata);
@@ -940,13 +956,114 @@ function initTheme() {
     });
 }
 
+// Reset Button - Go back to welcome page
+function initResetButton() {
+    const resetBtn = document.getElementById('resetBtn');
+    if (!resetBtn) return;
+
+    resetBtn.addEventListener('click', () => {
+        // Scroll to top (especially important for mobile)
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        // Clear URL parameters to go back to welcome state
+        window.history.pushState({}, '', window.location.pathname);
+        
+        // Clear all metadata
+        clearAllMetadata();
+        
+        // Hide main image
+        const mainImage = document.getElementById('mainImage');
+        if (mainImage) {
+            mainImage.src = '';
+            mainImage.style.display = 'none';
+        }
+        
+        // Show welcome/drag-drop zone
+        const dragDropZone = document.getElementById('dragDropZone');
+        if (dragDropZone) {
+            dragDropZone.classList.remove('hidden');
+        }
+        
+        // Hide title header
+        const imageTitleHeader = document.getElementById('imageTitleHeader');
+        if (imageTitleHeader) {
+            imageTitleHeader.classList.remove('has-content');
+        }
+        
+        // Reset C2PA status
+        updateC2PAStatus(false, 0);
+    });
+}
+
+// Info Button - Show About modal
+function initInfoButton() {
+    const infoBtn = document.getElementById('infoBtn');
+    const aboutModal = document.getElementById('aboutModal');
+    const modalClose = document.getElementById('modalClose');
+    
+    if (!infoBtn || !aboutModal) return;
+
+    // Open modal
+    infoBtn.addEventListener('click', () => {
+        aboutModal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    });
+
+    // Close modal on close button
+    if (modalClose) {
+        modalClose.addEventListener('click', () => {
+            aboutModal.classList.remove('active');
+            document.body.style.overflow = '';
+        });
+    }
+
+    // Close modal on overlay click
+    aboutModal.addEventListener('click', (e) => {
+        if (e.target === aboutModal) {
+            aboutModal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    });
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && aboutModal.classList.contains('active')) {
+            aboutModal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+    });
+}
+
+// Update image title header with filename
+function updateImageTitle(filename) {
+    const imageTitleHeader = document.getElementById('imageTitleHeader');
+    const imageTitle = document.getElementById('imageTitle');
+    const imageCaption = document.getElementById('imageCaption');
+    
+    if (!imageTitleHeader || !imageTitle) return;
+    
+    if (filename) {
+        // Show full filename with extension
+        imageTitle.textContent = filename;
+        imageTitleHeader.classList.add('has-content');
+    } else {
+        imageTitle.textContent = '';
+        if (imageCaption) imageCaption.textContent = '';
+        imageTitleHeader.classList.remove('has-content');
+    }
+}
+
 // Initialize theme when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         initTheme();
+        initResetButton();
+        initInfoButton();
         init();
     });
 } else {
     initTheme();
+    initResetButton();
+    initInfoButton();
     init();
 }
