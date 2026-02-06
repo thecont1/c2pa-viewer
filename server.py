@@ -537,7 +537,7 @@ def format_provenance_for_web(c2pa_data):
     if sig_info:
         provenance.append({
             'name': 'Verification',
-            'verification': 'Valid'
+            'verification': 'Signature Valid'
         })
     
     return provenance

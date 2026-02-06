@@ -131,7 +131,7 @@ function updateC2PAStatus(hasC2PA, provenanceCount = 0) {
     if (hasC2PA) {
         statusCard.classList.add('verified');
         statusCard.classList.remove('unverified');
-        statusValue.textContent = 'Verified';
+        statusValue.textContent = 'Authenticity Verified';
         if (statusDescription) {
             statusDescription.textContent = `${provenanceCount} provenance entries found`;
         }
@@ -399,7 +399,7 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
             `;
         } else if (item.verification) {
             return `
-                <li class="provenance-item ${item.verification === 'Valid' ? 'verified' : ''} ${collapsedClass}" ${hiddenClass}>
+                <li class="provenance-item ${item.verification.includes('Valid') ? 'verified' : ''} ${collapsedClass}" ${hiddenClass}>
                     <strong>✓ Verification</strong>
                     <p>${item.verification}</p>
                     ${item.issuer ? `<p class="timestamp">Issuer: ${item.issuer}</p>` : ''}
@@ -876,10 +876,10 @@ function setupDragAndDrop() {
 async function init() {
     const params = await extractParamsFromUrl();
     
+    // Always set up drag and drop (works even when image is showing)
+    setupDragAndDrop();
+    
     if (!params.imageUri) {
-        // Show drag and drop zone
-        setupDragAndDrop();
-        
         // Sidebar now shows empty template with em-dashes by default
         // No placeholder needed - all sections visible with empty state
         
