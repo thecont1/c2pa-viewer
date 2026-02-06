@@ -912,16 +912,11 @@ async function init() {
             
             // Show filename under source thumbnail and update title header
             const filenameElement = document.getElementById('filename');
-<<<<<<< Updated upstream
-            filenameElement.textContent = metadata.filename;
-            filenameElement.style.display = 'block';
-            updateImageTitle(metadata.filename);
-=======
             if (filenameElement) {
                 filenameElement.textContent = metadata.filename;
                 filenameElement.style.display = 'block';
             }
->>>>>>> Stashed changes
+            updateImageTitle(metadata.filename);
             
             hideLoading();
             renderPhotographyMetadata(metadata);
