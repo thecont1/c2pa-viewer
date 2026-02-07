@@ -423,6 +423,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 1.25rem;
+  position: relative;
 }
 
 .cc-logo-large {
@@ -475,10 +476,7 @@ body {
 .cc-info {
   margin-top: 2rem;
   padding: 1.25rem;
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-md);
-  border-left: 3px solid var(--color-accent);
-  text-align: left;
+  text-align: center;
 }
 
 .cc-info-text {
@@ -501,9 +499,56 @@ body {
   text-decoration: underline;
 }
 
+/* Inline CC logo in info box */
+.cc-logo-inline {
+  width: 300px;
+  height: auto;
+  display: block;
+  margin: 0.5rem auto 0;
+  filter: grayscale(100%) opacity(0.2);
+  transition: filter 0.2s ease;
+}
+
+.cc-info:hover .cc-logo-inline {
+  filter: grayscale(0%) opacity(1);
+}
+
+/* Spinner animation for loading */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+.spinner svg {
+  color: var(--color-accent);
+}
+
+/* Subtle Dot Spinner - positioned behind select button */
+.loading-indicator {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  opacity: 0.5;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.select-file-link {
+  position: relative;
+  z-index: 2;
+}
+
+.spinner-dots {
+  width: 32px;
+  height: 32px;
+  animation: spin 1.5s linear infinite;
+  color: var(--color-text-secondary);
+}
+
 /* Welcome Hidden State */
 .welcome-zone.hidden {
-  display: none;
+  display: none !important;
 }
 
 /* ========================================
@@ -1337,16 +1382,24 @@ body {
 
   .framed-image {
     max-width: calc(100vw - var(--space-8) * 2);
+    margin: 0 auto;
+    display: block;
   }
 
   .welcome-zone {
     padding: 1rem;
-    position: relative;
-    min-height: 50vh;
+    position: absolute;
+    inset: 0;
+    min-height: auto;
   }
 
   .welcome-content {
     max-width: 100%;
+    gap: 0.75rem;
+  }
+
+  .welcome-zone.hidden {
+    display: none !important;
   }
 
   .cc-logo-large {

@@ -40,7 +40,6 @@ async function extractParamsFromUrl() {
 
 async function loadMetadataFromApi(uri) {
     const baseUrl = window.location.origin;
-    console.log('Loading metadata from URI:', uri);
     
     try {
         const response = await fetch(`${baseUrl}/api/metadata?uri=${encodeURIComponent(uri)}`);
@@ -48,7 +47,6 @@ async function loadMetadataFromApi(uri) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        console.log('API response data:', data);
         
         const imageKey = Object.keys(data)[0];
         return data[imageKey];
@@ -62,7 +60,7 @@ async function loadMetadataFromApi(uri) {
 async function loadThumbnailsFromApi(uri) {
     const baseUrl = window.location.origin;
     try {
-        const response = await fetch(`${baseUrl}/api/thumbnails?uri=${encodeURIComponent(uri)}`);
+        const response = await fetch(`${baseUrl}/api/extract_thumbnails?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             return null;
         }
@@ -84,17 +82,14 @@ function displayError(message) {
 }
 
 function showLoading() {
-    // Don't replace the entire sidebar content, just show loading indicator
-    const sidebarContent = document.querySelector('.sidebar-content');
-    // Add loading indicator at the beginning
-    sidebarContent.insertAdjacentHTML('afterbegin', `
-        <div id="loadingIndicator" class="loading">
-            <div class="spinner"></div>
-            <p>Loading metadata...</p>
-        </div>
-    `);
+    // Show spinner on welcome screen (behind select button)
+    const loader = document.getElementById('loadingIndicator');
+    if (loader) {
+        loader.style.display = 'block';
+    }
     
-    // Hide other content temporarily
+    // Hide sidebar sections during loading
+    const sidebarContent = document.querySelector('.sidebar-content');
     const sections = sidebarContent.querySelectorAll('.thumbnail-section, .provenance-section, .metadata-grid, .description-section');
     sections.forEach(section => {
         if (section && section.style) {
@@ -104,9 +99,10 @@ function showLoading() {
 }
 
 function hideLoading() {
-    const loadingIndicator = document.getElementById('loadingIndicator');
-    if (loadingIndicator) {
-        loadingIndicator.remove();
+    // Hide spinner
+    const loader = document.getElementById('loadingIndicator');
+    if (loader) {
+        loader.style.display = 'none';
     }
     
     // Show all sections
@@ -199,8 +195,6 @@ function renderIPTCMetadata(metadata) {
 }
 
 function renderGPSMetadata(metadata) {
-    console.log('Metadata.gps:', metadata.gps);
-    
     const gps = metadata.gps || {};
     const locationSection = Array.from(document.querySelectorAll('.metadata-section')).find(section => 
         section.querySelector('h2') && section.querySelector('h2').textContent.includes('Location')
@@ -492,8 +486,6 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
 }
 
 function renderAuthorInfo(authorInfo) {
-    console.log('Rendering author info:', authorInfo);
-    
     // Website
     const websiteItem = document.getElementById('authorWebsiteItem');
     const websiteValue = document.getElementById('authorWebsite');
@@ -547,12 +539,10 @@ function renderAuthorInfo(authorInfo) {
     // Social Media Links
     const socialContainer = document.getElementById('authorSocial');
     const socialLinks = document.getElementById('socialLinks');
-    console.log('Social sameAs:', authorInfo.sameAs, 'length:', authorInfo.sameAs?.length);
     if (authorInfo.sameAs && authorInfo.sameAs.length > 0 && socialContainer && socialLinks) {
         let socialHtml = '';
         authorInfo.sameAs.forEach(url => {
             const platform = getSocialPlatform(url);
-            console.log('Adding social link:', url, 'platform:', platform);
             socialHtml += `<a href="${url}" target="_blank" rel="noopener" class="social-link ${platform}">${platform}</a>`;
         });
         socialLinks.innerHTML = socialHtml;
@@ -609,29 +599,60 @@ function formatDate(dateString) {
     return dateString.replace(':', '-').replace(':', '-').replace(' ', ' at ');
 }
 
-async function renderSourceThumbnail(uri) {
-    const thumbnails = await loadThumbnailsFromApi(uri);
-    
-    if (thumbnails?.ingredient_thumbnail) {
+async function renderSourceThumbnail(uri, metadata = null) {
+    // Try to get thumbnail from metadata first (for API-loaded images)
+    if (metadata?.thumbnails?.ingredient_thumbnail) {
         const sourceImage = document.getElementById('sourceImage');
-        sourceImage.src = `data:image/jpeg;base64,${thumbnails.ingredient_thumbnail}`;
+        const placeholder = document.getElementById('thumbnailPlaceholder');
+        
+        sourceImage.src = `data:image/jpeg;base64,${metadata.thumbnails.ingredient_thumbnail}`;
         sourceImage.style.display = 'block';
         
-        // Hide placeholder if exists
-        const placeholder = document.getElementById('thumbnailPlaceholder');
         if (placeholder) {
             placeholder.style.display = 'none';
         }
         
-        // Ensure thumbnail is centered within container
         sourceImage.addEventListener('load', function() {
             this.style.margin = '0 auto';
+        });
+        
+        sourceImage.addEventListener('error', function() {
+            this.style.display = 'none';
+            if (placeholder) {
+                placeholder.style.display = 'flex';
+            }
+        });
+        return;
+    }
+    
+    // Fallback to loading from thumbnails API
+    const thumbnails = await loadThumbnailsFromApi(uri);
+    
+    if (thumbnails?.ingredient_thumbnail) {
+        const sourceImage = document.getElementById('sourceImage');
+        const placeholder = document.getElementById('thumbnailPlaceholder');
+        
+        sourceImage.src = `data:image/jpeg;base64,${thumbnails.ingredient_thumbnail}`;
+        sourceImage.style.display = 'block';
+        
+        if (placeholder) {
+            placeholder.style.display = 'none';
+        }
+        
+        sourceImage.addEventListener('load', function() {
+            this.style.margin = '0 auto';
+        });
+        
+        sourceImage.addEventListener('error', function() {
+            this.style.display = 'none';
+            if (placeholder) {
+                placeholder.style.display = 'flex';
+            }
         });
     } else {
         const sourceImage = document.getElementById('sourceImage');
         sourceImage.style.display = 'none';
         
-        // Show placeholder if exists
         const placeholder = document.getElementById('thumbnailPlaceholder');
         if (placeholder) {
             placeholder.style.display = 'flex';
@@ -745,16 +766,16 @@ async function uploadImageFile(file) {
         const imageKey = Object.keys(data)[0];
         const metadata = data[imageKey];
         
-        console.log('Uploaded image metadata:', metadata);
-        
         // Display the image
         const mainImage = document.getElementById('mainImage');
         mainImage.src = metadata.image_data;
         mainImage.style.display = 'block';
         
-        // Hide drag and drop zone
+        // Hide drag and drop zone completely to reveal main image
         const dragDropZone = document.getElementById('dragDropZone');
-        dragDropZone.classList.add('hidden');
+        if (dragDropZone) {
+            dragDropZone.classList.add('hidden');
+        }
         
         // Show filename and update title header
         const filenameElement = document.getElementById('filename');
@@ -891,18 +912,18 @@ async function init() {
     try {
         const metadata = await loadMetadataFromApi(params.imageUri);
         
-        console.log('Metadata received:', metadata);
-        
         if (metadata) {
             const mainImage = document.getElementById('mainImage');
             mainImage.src = params.imageUri;
             mainImage.style.display = 'block';
             
-            // Hide the welcome/drag-drop zone
+            // Hide the welcome zone completely when image loads
             const dragDropZone = document.getElementById('dragDropZone');
             if (dragDropZone) {
                 dragDropZone.classList.add('hidden');
             }
+            
+            hideLoading();
             
             // Check if C2PA verification container exists before accessing style
             const c2paVerificationContainer = document.querySelector('.c2pa-verification-container');
@@ -917,8 +938,6 @@ async function init() {
                 filenameElement.style.display = 'block';
             }
             updateImageTitle(metadata.filename);
-            
-            hideLoading();
             renderPhotographyMetadata(metadata);
             renderExifMetadata(metadata);
             renderGPSMetadata(metadata);
@@ -934,7 +953,7 @@ async function init() {
                 renderC2PAMetadata(null, false);
             }
             
-            await renderSourceThumbnail(params.imageUri);
+            await renderSourceThumbnail(params.imageUri, metadata);
         }
     } catch (error) {
         console.error('Error initializing:', error);
@@ -983,16 +1002,10 @@ function initResetButton() {
             mainImage.style.display = 'none';
         }
         
-        // Show welcome/drag-drop zone
+        // Show welcome zone again
         const dragDropZone = document.getElementById('dragDropZone');
         if (dragDropZone) {
             dragDropZone.classList.remove('hidden');
-        }
-        
-        // Hide title header
-        const imageTitleHeader = document.getElementById('imageTitleHeader');
-        if (imageTitleHeader) {
-            imageTitleHeader.classList.remove('has-content');
         }
         
         // Reset C2PA status

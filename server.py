@@ -715,6 +715,11 @@ async def get_metadata(uri: str = Query(..., description="Image file path or URL
                 }
             }
             
+            # Extract thumbnails
+            thumbnails = extract_thumbnails_from_image(image_path)
+            if thumbnails:
+                response[display_name]['thumbnails'] = thumbnails
+            
             return response
         
     except HTTPException:
