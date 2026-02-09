@@ -39,10 +39,8 @@ async function extractParamsFromUrl() {
 }
 
 async function loadMetadataFromApi(uri) {
-    const baseUrl = window.location.origin;
-    
     try {
-        const response = await fetch(`${baseUrl}/api/metadata?uri=${encodeURIComponent(uri)}`);
+        const response = await fetch(`api/metadata?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -58,9 +56,8 @@ async function loadMetadataFromApi(uri) {
 }
 
 async function loadThumbnailsFromApi(uri) {
-    const baseUrl = window.location.origin;
     try {
-        const response = await fetch(`${baseUrl}/api/extract_thumbnails?uri=${encodeURIComponent(uri)}`);
+        const response = await fetch(`api/extract_thumbnails?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             return null;
         }
@@ -290,8 +287,7 @@ function renderExifMetadata(metadata) {
 
 async function loadC2PAMetadataFromApi(uri) {
     try {
-        const baseUrl = window.location.origin;
-        const response = await fetch(`${baseUrl}/api/c2pa_metadata?uri=${encodeURIComponent(uri)}`);
+        const response = await fetch(`api/c2pa_metadata?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             return null;
         }
@@ -753,7 +749,7 @@ async function uploadImageFile(file) {
     showLoading();
     
     try {
-        const response = await fetch(`${window.location.origin}/api/upload`, {
+        const response = await fetch(`api/upload`, {
             method: 'POST',
             body: formData
         });
