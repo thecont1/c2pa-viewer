@@ -746,7 +746,7 @@ async def get_c2pa_metadata(uri: str = Query(..., description="Image file path o
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/c2pa-mini")
+@app.get("/api/c2pa_mini")
 async def get_c2pa_mini(uri: str = Query(..., description="Image file path or URL")):
     """Get minimal C2PA credentials for quick trust verification (e.g., on hover).
     
