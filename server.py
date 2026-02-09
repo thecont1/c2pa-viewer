@@ -746,6 +746,69 @@ async def get_c2pa_metadata(uri: str = Query(..., description="Image file path o
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/c2pa-mini")
+async def get_c2pa_mini(uri: str = Query(..., description="Image file path or URL")):
+    """Get minimal C2PA credentials for quick trust verification (e.g., on hover).
+    
+    Returns a compact response with essential verification info:
+    - Creator: Author name from C2PA manifest
+    - Issued by: Certificate issuer (e.g., Adobe Inc.)
+    - Issued on: Signing timestamp
+    - Status: 'Authenticity Verified' or 'Unverified'
+    - More: Link to full viewer
+    """
+    try:
+        with ImagePathContext(uri) as image_path:
+            c2pa_data = extract_c2pa_data(image_path)
+            
+            if not c2pa_data:
+                return {
+                    'creator': None,
+                    'issued_by': None,
+                    'issued_on': None,
+                    'status': 'Unverified',
+                    'more': f'https://apps.thecontrarian.in/c2pa/?uri={uri}'
+                }
+            
+            # Extract creator from author_info
+            author_info = c2pa_data.get('author_info', {})
+            creator = None
+            if 'author' in author_info:
+                authors = author_info['author']
+                if isinstance(authors, list) and len(authors) > 0:
+                    creator = authors[0].get('name')
+                elif isinstance(authors, dict):
+                    creator = authors.get('name')
+            
+            # Extract signature info
+            sig_info = c2pa_data.get('signature_info', {})
+            issued_by = sig_info.get('issuer')
+            issued_on = format_datetime_full(sig_info.get('time'), include_timezone=True) if sig_info.get('time') else None
+            
+            # Determine verification status
+            status = 'Authenticity Verified' if c2pa_data else 'Unverified'
+            
+            return {
+                'creator': creator,
+                'issued_by': issued_by,
+                'issued_on': issued_on,
+                'status': status,
+                'more': f'https://apps.thecontrarian.in/c2pa/?uri={uri}'
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Return unverified status on error
+        return {
+            'creator': None,
+            'issued_by': None,
+            'issued_on': None,
+            'status': 'Unverified',
+            'more': f'https://apps.thecontrarian.in/c2pa/?uri={uri}'
+        }
+
+
 @app.get("/")
 async def serve_index():
     """Serve the main HTML page."""
