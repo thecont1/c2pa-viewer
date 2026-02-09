@@ -674,7 +674,7 @@ def extract_thumbnails_from_image(image_path: str):
         return {}
 
 
-@app.get("/c2pa/api/metadata")
+@app.get("/api/metadata")
 async def get_metadata(uri: str = Query(..., description="Image file path or URL")):
     """Get complete metadata for an image."""
     try:
@@ -728,7 +728,7 @@ async def get_metadata(uri: str = Query(..., description="Image file path or URL
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/c2pa/api/c2pa_metadata")
+@app.get("/api/c2pa_metadata")
 async def get_c2pa_metadata(uri: str = Query(..., description="Image file path or URL")):
     """Get C2PA metadata and provenance information."""
     try:
@@ -747,7 +747,7 @@ async def get_c2pa_metadata(uri: str = Query(..., description="Image file path o
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/c2pa/api/extract_thumbnails")
+@app.get("/api/extract_thumbnails")
 async def get_thumbnails(uri: str = Query(..., description="Image file path or URL")):
     """Extract and return C2PA thumbnails from an image."""
     try:
@@ -761,7 +761,7 @@ async def get_thumbnails(uri: str = Query(..., description="Image file path or U
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/c2pa/")
+@app.get("/")
 async def serve_index():
     """Serve the main HTML page."""
     index_path = Path(__file__).parent / "index.html"
@@ -771,7 +771,7 @@ async def serve_index():
 
 
 # Mount static files (CSS, JS, images)
-@app.get("/c2pa/styles.css")
+@app.get("/styles.css")
 async def serve_css():
     css_path = Path(__file__).parent / "styles.css"
     if css_path.exists():
@@ -779,7 +779,7 @@ async def serve_css():
     raise HTTPException(status_code=404, detail="styles.css not found")
 
 
-@app.get("/c2pa/script.js")
+@app.get("/script.js")
 async def serve_js():
     js_path = Path(__file__).parent / "script.js"
     if js_path.exists():
@@ -787,7 +787,7 @@ async def serve_js():
     raise HTTPException(status_code=404, detail="script.js not found")
 
 
-@app.get("/c2pa/content_credentials_logo.svg")
+@app.get("/content_credentials_logo.svg")
 async def serve_logo():
     logo_path = Path(__file__).parent / "content_credentials_logo.svg"
     if logo_path.exists():
@@ -795,7 +795,7 @@ async def serve_logo():
     raise HTTPException(status_code=404, detail="Logo not found")
 
 
-@app.post("/c2pa/api/upload")
+@app.post("/api/upload")
 async def upload_image(file: UploadFile = File(...)):
     """Upload an image file and return metadata."""
     try:
@@ -868,7 +868,7 @@ async def upload_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/c2pa/{filename}")
+@app.get("/{filename}")
 async def serve_image(filename: str):
     """Serve image files."""
     file_path = Path(__file__).parent / filename
