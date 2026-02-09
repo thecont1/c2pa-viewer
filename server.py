@@ -523,12 +523,13 @@ def format_provenance_for_web(c2pa_data):
                     'publisher': publisher_name
                 })
     
-    # Actions with timezone-aware timestamps
+    # Actions with timezone-aware timestamps and parameters
     for action in c2pa_data.get('actions', []):
         action_item = {
             'name': 'Action',
             'action': action['action'],
-            'software': action.get('softwareAgent')
+            'software': action.get('softwareAgent'),
+            'parameters': action.get('parameters', {})
         }
         if action.get('when'):
             action_item['when'] = format_datetime_full(action['when'], include_timezone=True)
@@ -674,13 +675,12 @@ def extract_thumbnails_from_image(image_path: str):
         return {}
 
 
-@app.get("/api/metadata")
-async def get_metadata(uri: str = Query(..., description="Image file path or URL")):
-    """Get complete metadata for an image."""
+@app.get("/api/exif_metadata")
+async def get_exif_metadata(uri: str = Query(..., description="Image file path or URL")):
+    """Get EXIF, IPTC, and GPS metadata for an image (no C2PA/provenance data)."""
     try:
         with ImagePathContext(uri) as image_path:
-            # Extract all metadata
-            c2pa_data = extract_c2pa_data(image_path)
+            # Extract only EXIF/IPTC metadata (no C2PA - that's expensive)
             exif_data = extract_exif_metadata(image_path)
             iptc_data = extract_iptc_data(image_path)
             
@@ -715,11 +715,6 @@ async def get_metadata(uri: str = Query(..., description="Image file path or URL
                 }
             }
             
-            # Extract thumbnails
-            thumbnails = extract_thumbnails_from_image(image_path)
-            if thumbnails:
-                response[display_name]['thumbnails'] = thumbnails
-            
             return response
         
     except HTTPException:
@@ -730,30 +725,20 @@ async def get_metadata(uri: str = Query(..., description="Image file path or URL
 
 @app.get("/api/c2pa_metadata")
 async def get_c2pa_metadata(uri: str = Query(..., description="Image file path or URL")):
-    """Get C2PA metadata and provenance information."""
+    """Get C2PA metadata, provenance information, and embedded thumbnails."""
     try:
         with ImagePathContext(uri) as image_path:
             c2pa_data = extract_c2pa_data(image_path)
             provenance = format_provenance_for_web(c2pa_data) if c2pa_data else []
             
+            # Extract C2PA thumbnails (claim_thumbnail and ingredient_thumbnail)
+            thumbnails = extract_thumbnails_from_image(image_path)
+            
             return {
                 'provenance': provenance,
-                'c2pa_data': c2pa_data
+                'c2pa_data': c2pa_data,
+                'thumbnails': thumbnails
             }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/extract_thumbnails")
-async def get_thumbnails(uri: str = Query(..., description="Image file path or URL")):
-    """Extract and return C2PA thumbnails from an image."""
-    try:
-        with ImagePathContext(uri) as image_path:
-            thumbnails = extract_thumbnails_from_image(image_path)
-            return thumbnails
         
     except HTTPException:
         raise

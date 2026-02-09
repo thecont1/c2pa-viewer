@@ -13,22 +13,22 @@ TEST_IMAGES = [
     "https://contentcredentials.org/static/images/c2pa_sample_cloud.jpg",
 ]
 
-def test_metadata_endpoint(base_url, image_uri):
-    """Test /api/metadata endpoint."""
+def test_exif_metadata_endpoint(base_url, image_uri):
+    """Test /api/exif_metadata endpoint."""
     print(f"\n{'='*70}")
     print(f"Testing: {image_uri}")
     print(f"{'='*70}")
     
     try:
         response = requests.get(
-            f"{base_url}/api/metadata",
+            f"{base_url}/api/exif_metadata",
             params={"uri": image_uri},
             timeout=30
         )
         
         if response.status_code == 200:
             data = response.json()
-            print("✓ /api/metadata endpoint working")
+            print("✓ /api/exif_metadata endpoint working")
             
             # Print basic info
             for filename, metadata in data.items():
@@ -56,7 +56,7 @@ def test_metadata_endpoint(base_url, image_uri):
 
 
 def test_c2pa_endpoint(base_url, image_uri):
-    """Test /api/c2pa_metadata endpoint."""
+    """Test /api/c2pa_metadata endpoint (includes thumbnails)."""
     try:
         response = requests.get(
             f"{base_url}/api/c2pa_metadata",
@@ -83,42 +83,22 @@ def test_c2pa_endpoint(base_url, image_uri):
                         print(f"  - {name}")
             else:
                 print("\n  No C2PA metadata found")
+            
+            # Check thumbnails (now included in c2pa_metadata)
+            thumbnails = data.get('thumbnails', {})
+            print(f"\nThumbnails:")
+            if thumbnails.get('claim_thumbnail'):
+                print("  - Claim thumbnail: Found")
+            if thumbnails.get('ingredient_thumbnail'):
+                print("  - Ingredient thumbnail: Found")
+            if not thumbnails.get('claim_thumbnail') and not thumbnails.get('ingredient_thumbnail'):
+                print("  - No thumbnails found")
         else:
             print(f"\n✗ C2PA endpoint error: {response.status_code}")
             return False
             
     except Exception as e:
         print(f"\n✗ C2PA endpoint error: {e}")
-        return False
-    
-    return True
-
-
-def test_thumbnails_endpoint(base_url, image_uri):
-    """Test /api/extract_thumbnails endpoint."""
-    try:
-        response = requests.get(
-            f"{base_url}/api/extract_thumbnails",
-            params={"uri": image_uri},
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            print("\n✓ /api/extract_thumbnails endpoint working")
-            
-            if data.get('claim_thumbnail'):
-                print("  - Claim thumbnail: Found")
-            if data.get('ingredient_thumbnail'):
-                print("  - Ingredient thumbnail: Found")
-            if not data.get('claim_thumbnail') and not data.get('ingredient_thumbnail'):
-                print("  - No thumbnails found")
-        else:
-            print(f"\n✗ Thumbnails endpoint error: {response.status_code}")
-            return False
-            
-    except Exception as e:
-        print(f"\n✗ Thumbnails endpoint error: {e}")
         return False
     
     return True
@@ -134,9 +114,8 @@ def main():
     
     # Test with remote image
     for image_uri in TEST_IMAGES:
-        test_metadata_endpoint(base_url, image_uri)
+        test_exif_metadata_endpoint(base_url, image_uri)
         test_c2pa_endpoint(base_url, image_uri)
-        test_thumbnails_endpoint(base_url, image_uri)
     
     print(f"\n{'='*70}")
     print("Tests complete!")
