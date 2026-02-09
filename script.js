@@ -14,7 +14,7 @@ const metadataMappings = {
         },
         'c2pa.color_adjustments': {
             icon: '🎨',
-            description: 'Adjusted properties like tone, saturation, curves, shadows, or highlights'
+            description: 'Color adjustments'
         },
         'c2pa.cropped': {
             icon: '✂️',
@@ -27,7 +27,70 @@ const metadataMappings = {
         'c2pa.resized': {
             icon: '🔍',
             description: 'Changed dimensions or file size'
+        },
+        'c2pa.filtered': {
+            icon: '🔮',
+            description: 'Applied filters or effects'
         }
+    },
+    // Adobe Camera Raw parameter names to user-friendly labels
+    acrParameters: {
+        'Blacks2012': 'Blacks',
+        'Clarity2012': 'Clarity',
+        'Dehaze': 'Dehaze',
+        'Exposure2012': 'Exposure',
+        'Highlights2012': 'Highlights',
+        'Shadows2012': 'Shadows',
+        'Whites2012': 'Whites',
+        'Contrast2012': 'Contrast',
+        'Saturation': 'Saturation',
+        'Vibrance': 'Vibrance',
+        'Temperature': 'Temperature',
+        'Tint': 'Tint',
+        'LensProfileEnable': 'Lens Profile Correction',
+        'LuminanceAdjustmentRed': 'Red Luminance',
+        'LuminanceAdjustmentOrange': 'Orange Luminance',
+        'LuminanceAdjustmentYellow': 'Yellow Luminance',
+        'LuminanceAdjustmentGreen': 'Green Luminance',
+        'LuminanceAdjustmentAqua': 'Aqua Luminance',
+        'LuminanceAdjustmentBlue': 'Blue Luminance',
+        'LuminanceAdjustmentPurple': 'Purple Luminance',
+        'LuminanceAdjustmentMagenta': 'Magenta Luminance',
+        'SaturationAdjustmentRed': 'Red Saturation',
+        'SaturationAdjustmentOrange': 'Orange Saturation',
+        'SaturationAdjustmentYellow': 'Yellow Saturation',
+        'SaturationAdjustmentGreen': 'Green Saturation',
+        'SaturationAdjustmentAqua': 'Aqua Saturation',
+        'SaturationAdjustmentBlue': 'Blue Saturation',
+        'SaturationAdjustmentPurple': 'Purple Saturation',
+        'SaturationAdjustmentMagenta': 'Magenta Saturation',
+        'HueAdjustmentRed': 'Red Hue',
+        'HueAdjustmentOrange': 'Orange Hue',
+        'HueAdjustmentYellow': 'Yellow Hue',
+        'HueAdjustmentGreen': 'Green Hue',
+        'HueAdjustmentAqua': 'Aqua Hue',
+        'HueAdjustmentBlue': 'Blue Hue',
+        'HueAdjustmentPurple': 'Purple Hue',
+        'HueAdjustmentMagenta': 'Magenta Hue',
+        'LuminanceSmoothing': 'Luminance Smoothing (Noise Reduction)',
+        'ColorNoiseReduction': 'Color Noise Reduction',
+        'Sharpness': 'Sharpness',
+        'SharpenRadius': 'Sharpen Radius',
+        'SharpenDetail': 'Sharpen Detail',
+        'SharpenEdgeMasking': 'Sharpen Edge Masking',
+        'PerspectiveRotate': 'Perspective Rotation',
+        'PerspectiveVertical': 'Perspective Vertical',
+        'PerspectiveHorizontal': 'Perspective Horizontal',
+        'PerspectiveScale': 'Perspective Scale',
+        'PerspectiveAspect': 'Perspective Aspect',
+        'PerspectiveUpright': 'Perspective Upright',
+        'Defringe': 'Defringe',
+        'PostCropVignetteAmount': 'Post-Crop Vignette',
+        'GrainAmount': 'Grain Amount',
+        'Texture': 'Texture',
+        'Look Table': 'Look/Preset',
+        'Point Curve': 'Tone Curve',
+        'Masking': 'Masking'
     }
 };
 
@@ -38,9 +101,9 @@ async function extractParamsFromUrl() {
     };
 }
 
-async function loadMetadataFromApi(uri) {
+async function loadExifMetadataFromApi(uri) {
     try {
-        const response = await fetch(`/c2pa/api/metadata?uri=${encodeURIComponent(uri)}`);
+        const response = await fetch(`/c2pa/api/exif_metadata?uri=${encodeURIComponent(uri)}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -49,22 +112,8 @@ async function loadMetadataFromApi(uri) {
         const imageKey = Object.keys(data)[0];
         return data[imageKey];
     } catch (error) {
-        console.error('Error loading metadata from API:', error);
+        console.error('Error loading EXIF metadata from API:', error);
         displayError(`Failed to load metadata: ${error.message}`);
-        return null;
-    }
-}
-
-async function loadThumbnailsFromApi(uri) {
-    try {
-        const response = await fetch(`/c2pa/api/extract_thumbnails?uri=${encodeURIComponent(uri)}`);
-        if (!response.ok) {
-            return null;
-        }
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.error('Error loading thumbnails:', error);
         return null;
     }
 }
@@ -292,7 +341,10 @@ async function loadC2PAMetadataFromApi(uri) {
             return null;
         }
         const data = await response.json();
-        return data.provenance;
+        return {
+            provenance: data.provenance,
+            thumbnails: data.thumbnails || {}
+        };
     } catch (error) {
         console.error('Error loading C2PA metadata:', error);
         return null;
@@ -325,6 +377,63 @@ function getActionLabel(item) {
         return actionName.charAt(0).toUpperCase() + actionName.slice(1);
     }
     return 'Action';
+}
+
+function formatActionParameters(parameters) {
+    // Format action parameters into a readable description
+    if (!parameters || Object.keys(parameters).length === 0) {
+        return null;
+    }
+    
+    // Handle Adobe Camera Raw parameters
+    const acrKey = parameters['com.adobe.acr'];
+    const acrValue = parameters['com.adobe.acr.value'];
+    
+    if (acrKey && acrValue !== undefined) {
+        const friendlyName = metadataMappings.acrParameters[acrKey] || acrKey;
+        
+        // Format the value with appropriate sign for numbers
+        let formattedValue = acrValue;
+        if (!isNaN(parseFloat(acrValue)) && acrValue !== 'Masking changed' && !acrValue.includes('Changed')) {
+            const numVal = parseFloat(acrValue);
+            // For exposure values that might be in hundredths
+            if (acrKey === 'Exposure2012' && Math.abs(numVal) > 10) {
+                formattedValue = (numVal / 100).toFixed(2);
+            }
+            // Add + sign for positive numbers (except for certain parameters)
+            if (numVal > 0 && !['Masking', 'Look Table', 'Point Curve', 'LensProfileEnable'].includes(acrKey)) {
+                formattedValue = '+' + formattedValue;
+            }
+        }
+        
+        // Special handling for specific parameter types
+        if (acrValue === 'Masking changed') {
+            return 'Masking was modified';
+        }
+        if (acrValue.includes('Changed')) {
+            return `${friendlyName} was modified`;
+        }
+        if (acrKey === 'LensProfileEnable' && acrValue === '1') {
+            return `${friendlyName} enabled`;
+        }
+        
+        return `${friendlyName}: ${formattedValue}`;
+    }
+    
+    // Handle ingredients (for opened action)
+    if (parameters.ingredients) {
+        return 'Opened source file';
+    }
+    
+    // Generic fallback - format all key-value pairs
+    const parts = [];
+    for (const [key, value] of Object.entries(parameters)) {
+        if (key.startsWith('com.')) continue; // Skip Adobe-specific keys
+        if (typeof value === 'object') continue; // Skip nested objects
+        parts.push(`${key}: ${value}`);
+    }
+    
+    return parts.length > 0 ? parts.join(', ') : null;
 }
 
 function renderC2PAMetadata(provenance, hasC2PA = true) {
@@ -368,8 +477,11 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
         if (item.name === 'Action' && item.action) {
             const actionInfo = metadataMappings.actions[item.action];
             const icon = actionInfo?.icon || '📋';
-            const description = actionInfo?.description || item.action;
             const actionLabel = getActionLabel(item);
+            
+            // Get specific parameter description or fall back to generic description
+            const paramDescription = formatActionParameters(item.parameters);
+            const description = paramDescription || actionInfo?.description || item.action;
             
             return `
                 <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
@@ -595,39 +707,11 @@ function formatDate(dateString) {
     return dateString.replace(':', '-').replace(':', '-').replace(' ', ' at ');
 }
 
-async function renderSourceThumbnail(uri, metadata = null) {
-    // Try to get thumbnail from metadata first (for API-loaded images)
-    if (metadata?.thumbnails?.ingredient_thumbnail) {
-        const sourceImage = document.getElementById('sourceImage');
-        const placeholder = document.getElementById('thumbnailPlaceholder');
-        
-        sourceImage.src = `data:image/jpeg;base64,${metadata.thumbnails.ingredient_thumbnail}`;
-        sourceImage.style.display = 'block';
-        
-        if (placeholder) {
-            placeholder.style.display = 'none';
-        }
-        
-        sourceImage.addEventListener('load', function() {
-            this.style.margin = '0 auto';
-        });
-        
-        sourceImage.addEventListener('error', function() {
-            this.style.display = 'none';
-            if (placeholder) {
-                placeholder.style.display = 'flex';
-            }
-        });
-        return;
-    }
-    
-    // Fallback to loading from thumbnails API
-    const thumbnails = await loadThumbnailsFromApi(uri);
+function renderSourceThumbnail(thumbnails) {
+    const sourceImage = document.getElementById('sourceImage');
+    const placeholder = document.getElementById('thumbnailPlaceholder');
     
     if (thumbnails?.ingredient_thumbnail) {
-        const sourceImage = document.getElementById('sourceImage');
-        const placeholder = document.getElementById('thumbnailPlaceholder');
-        
         sourceImage.src = `data:image/jpeg;base64,${thumbnails.ingredient_thumbnail}`;
         sourceImage.style.display = 'block';
         
@@ -646,10 +730,7 @@ async function renderSourceThumbnail(uri, metadata = null) {
             }
         });
     } else {
-        const sourceImage = document.getElementById('sourceImage');
         sourceImage.style.display = 'none';
-        
-        const placeholder = document.getElementById('thumbnailPlaceholder');
         if (placeholder) {
             placeholder.style.display = 'flex';
         }
@@ -906,7 +987,8 @@ async function init() {
     showLoading();
     
     try {
-        const metadata = await loadMetadataFromApi(params.imageUri);
+        // Load EXIF/IPTC/GPS metadata (fast, no cryptographic verification)
+        const metadata = await loadExifMetadataFromApi(params.imageUri);
         
         if (metadata) {
             const mainImage = document.getElementById('mainImage');
@@ -939,17 +1021,18 @@ async function init() {
             renderGPSMetadata(metadata);
             renderIPTCMetadata(metadata);
             
-            // Load and display C2PA metadata
-            const c2paProvenance = await loadC2PAMetadataFromApi(params.imageUri);
-            if (c2paProvenance && c2paProvenance.length > 0) {
-                updateC2PAStatus(true, c2paProvenance.length);
-                renderC2PAMetadata(c2paProvenance, true);
+            // Load C2PA metadata (slower, involves cryptographic verification)
+            const c2paData = await loadC2PAMetadataFromApi(params.imageUri);
+            if (c2paData && c2paData.provenance && c2paData.provenance.length > 0) {
+                updateC2PAStatus(true, c2paData.provenance.length);
+                renderC2PAMetadata(c2paData.provenance, true);
             } else {
                 updateC2PAStatus(false, 0);
                 renderC2PAMetadata(null, false);
             }
             
-            await renderSourceThumbnail(params.imageUri, metadata);
+            // Render thumbnails from C2PA data
+            renderSourceThumbnail(c2paData?.thumbnails);
         }
     } catch (error) {
         console.error('Error initializing:', error);
