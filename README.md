@@ -20,7 +20,8 @@ An API-based image viewer web application that allows users to verify [C2PA cont
 
 ### 3. C2PA Verification
 - Extracts and displays C2PA thumbnails (claim and ingredient images)
-- Shows provenance history with timestamps and actions
+- Shows provenance history with timestamps and detailed edit actions
+- Displays specific adjustment values (e.g., "Blacks: -5", "Clarity: +20")
 - Displays verification status with visual indicators
 
 ### 4. API Integration
@@ -28,6 +29,127 @@ An API-based image viewer web application that allows users to verify [C2PA cont
 - Accepts image URIs as input
 - Handles both local files and remote URLs
 - CORS-enabled for cross-origin requests
+
+## API Endpoints
+
+### Core Endpoints
+
+| Endpoint | Method | Description | Performance |
+|----------|--------|-------------|-------------|
+| `/api/exif_metadata` | GET | EXIF, IPTC, GPS metadata only | Fast (~10-50ms) |
+| `/api/c2pa_metadata` | GET | C2PA provenance + thumbnails | Slower (~100-500ms+) |
+| `/api/upload` | POST | Upload image, returns all metadata | Variable |
+
+### GET `/api/exif_metadata`
+
+Retrieve EXIF, IPTC, and GPS metadata for an image (no C2PA cryptographic verification).
+
+**Query Parameters:**
+- `uri` (required): Image file path or URL
+
+**Example:**
+```
+GET /api/exif_metadata?uri=https://example.com/image.jpg
+```
+
+**Response:**
+```json
+{
+  "image.jpg": {
+    "filename": "image.jpg",
+    "format": "JPEG",
+    "width": 4000,
+    "height": 3000,
+    "file_size_bytes": 1234567,
+    "file_size_mb": 1.18,
+    "photography": {
+      "camera_make": "Canon",
+      "camera_model": "EOS R5",
+      "lens_model": "RF 24-70mm f/2.8L",
+      "aperture": "f/2.8",
+      "shutter_speed": "1/250s",
+      "iso": "400",
+      "focal_length": "50mm"
+    },
+    "exif": { "Make": "Canon", "Model": "EOS R5", ... },
+    "gps": { "latitude": "40.7128", "longitude": "-74.0060" },
+    "iptc": { "title": "Sunset", "description": "A beautiful sunset", ... }
+  }
+}
+```
+
+### GET `/api/c2pa_metadata`
+
+Retrieve C2PA provenance data, including signature information, edit actions, and embedded thumbnails.
+
+**Query Parameters:**
+- `uri` (required): Image file path or URL
+
+**Example:**
+```
+GET /api/c2pa_metadata?uri=https://example.com/image.jpg
+```
+
+**Response:**
+```json
+{
+  "provenance": [
+    { "name": "Claim Generator", "generator": "Lightroom Classic 15.1" },
+    { "name": "Issued By", "issuer": "Adobe Inc." },
+    { "name": "Issued On", "date": "Jan 08, 2026 at 04:21 PM IST" },
+    { "name": "Author", "author": "John Doe" },
+    { "name": "Action", "action": "c2pa.color_adjustments", "parameters": {...} },
+    { "name": "Verification", "verification": "Signature Valid" }
+  ],
+  "c2pa_data": { "basic_info": {...}, "signature_info": {...}, "assertions": [...] },
+  "thumbnails": {
+    "claim_thumbnail": "base64_encoded_data...",
+    "ingredient_thumbnail": "base64_encoded_data..."
+  }
+}
+```
+
+### POST `/api/upload`
+
+Upload an image file and receive complete metadata (EXIF + C2PA) plus the image as a base64 data URL.
+
+**Request:** `multipart/form-data` with file field named `file`
+
+**Example:**
+```
+POST /api/upload
+Content-Type: multipart/form-data
+file: [image file]
+```
+
+**Response:**
+```json
+{
+  "filename.jpg": {
+    "filename": "filename.jpg",
+    "format": "JPEG",
+    "width": 4000,
+    "height": 3000,
+    "photography": {...},
+    "exif": {...},
+    "gps": {...},
+    "iptc": {...},
+    "provenance": [...],
+    "thumbnails": {...},
+    "image_data": "data:image/jpeg;base64,..."
+  }
+}
+```
+
+### Static File Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Serve the main HTML page |
+| `/styles.css` | GET | Serve CSS stylesheet |
+| `/script.js` | GET | Serve JavaScript file |
+| `/content_credentials_logo.svg` | GET | Serve Content Credentials logo |
+| `/{filename}` | GET | Serve image files (jpg, jpeg, png, gif) |
 
 ## How to Run the App
 
@@ -71,9 +193,9 @@ The test script makes HTTP requests to localhost:8080, so the server must be run
    - Frontend: `http://localhost:8080/`
 
    - API endpoints: 
-      - `http://localhost:8080/api/metadata`
+      - `http://localhost:8080/api/exif_metadata`
       - `http://localhost:8080/api/c2pa_metadata`
-      - `http://localhost:8080/api/extract_thumbnails`
+      - `http://localhost:8080/api/upload`
 
 4. **Typical usage**: Pass an image URL to the app.
 
@@ -104,6 +226,13 @@ The test script makes HTTP requests to localhost:8080, so the server must be run
 - **Tests**: `test_server.py` - API endpoint tests
 
 ## Architecture Notes
+
+### API Design
+The API separates EXIF extraction from C2PA verification for performance reasons:
+- **EXIF/IPTC extraction** is fast (simple binary parsing)
+- **C2PA verification** is slower (cryptographic signature verification, certificate chain validation)
+
+This separation allows external programs to request only the data they need without incurring unnecessary overhead.
 
 ### Why FastAPI over Flask
 The project uses FastAPI instead of Flask because:
