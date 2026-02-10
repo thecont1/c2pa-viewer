@@ -18,6 +18,9 @@ import tempfile
 import urllib.request
 from typing import Optional
 from urllib.parse import urlparse
+import hashlib
+import time
+from functools import lru_cache
 
 app = FastAPI(title="C2PA Metadata Viewer API", root_path="/c2pa")
 
@@ -33,10 +36,11 @@ app.add_middleware(
 
 class ImagePathContext:
     """Context manager for handling both local files and remote URLs."""
-    def __init__(self, uri: str):
+    def __init__(self, uri: str, timeout: int = 30):
         self.uri = uri
         self.temp_file = None
         self.local_path = None
+        self.timeout = timeout
         
     def __enter__(self):
         # Check if it's a URL
@@ -57,7 +61,7 @@ class ImagePathContext:
                     }
                 )
                 
-                response = urllib.request.urlopen(req, timeout=30)
+                response = urllib.request.urlopen(req, timeout=self.timeout)
                 
                 # Determine file extension from URL or content-type
                 content_type = response.headers.get('Content-Type', '')
@@ -164,6 +168,51 @@ def extract_c2pa_data(image_path: str):
         
     except Exception as e:
         print(f"Error extracting C2PA data: {e}")
+        return None
+
+
+def extract_c2pa_minimal(image_path: str):
+    """Extract only essential C2PA data for quick verification.
+    
+    Optimized version that extracts only what's needed for the mini API:
+    - signature_info (for issuer and timestamp)
+    - author_info (for creator name)
+    
+    This avoids extracting actions, ingredients, and other assertions
+    that aren't used by the mini endpoint.
+    """
+    try:
+        reader = c2pa.Reader(image_path)
+        manifest_json = reader.json()
+        
+        if not manifest_json:
+            return None
+        
+        data = json.loads(manifest_json)
+        active_label = data.get('active_manifest')
+        
+        if not active_label or active_label not in data.get('manifests', {}):
+            return None
+        
+        manifest = data['manifests'][active_label]
+        
+        # Extract ONLY what mini API needs
+        result = {
+            'signature_info': manifest.get('signature_info', {}),
+            'author_info': {}
+        }
+        
+        # Extract author from CreativeWork assertion only (if exists)
+        # Stop immediately after finding it to avoid unnecessary iterations
+        for assertion in manifest.get('assertions', []):
+            if assertion.get('label') == 'stds.schema-org.CreativeWork':
+                result['author_info'] = assertion.get('data', {})
+                break  # Early exit after finding the needed assertion
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error extracting minimal C2PA data: {e}")
         return None
 
 
@@ -746,6 +795,37 @@ async def get_c2pa_metadata(uri: str = Query(..., description="Image file path o
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Cache for mini API responses (5 minute TTL)
+_mini_cache = {}
+_CACHE_TTL = 300  # 5 minutes in seconds
+
+
+def _get_cache_key(uri: str) -> str:
+    """Generate a cache key for a URI."""
+    return hashlib.md5(uri.encode()).hexdigest()
+
+
+def _get_cached_mini_response(uri: str):
+    """Get cached response if available and not expired."""
+    cache_key = _get_cache_key(uri)
+    if cache_key in _mini_cache:
+        cached_data, timestamp = _mini_cache[cache_key]
+        if time.time() - timestamp < _CACHE_TTL:
+            print(f"Cache hit for {uri}")
+            return cached_data
+        else:
+            # Expired cache entry
+            del _mini_cache[cache_key]
+    return None
+
+
+def _set_cached_mini_response(uri: str, response: dict):
+    """Cache a mini API response."""
+    cache_key = _get_cache_key(uri)
+    _mini_cache[cache_key] = (response, time.time())
+    print(f"Cached response for {uri}")
+
+
 @app.get("/api/c2pa_mini")
 async def get_c2pa_mini(uri: str = Query(..., description="Image file path or URL")):
     """Get minimal C2PA credentials for quick trust verification (e.g., on hover).
@@ -756,19 +836,33 @@ async def get_c2pa_mini(uri: str = Query(..., description="Image file path or UR
     - Issued on: Signing timestamp
     - Status: 'Authenticity Verified' or 'Unverified'
     - More: Link to full viewer
+    
+    Optimizations:
+    - Uses specialized minimal extraction (extracts only needed fields)
+    - 5-minute response cache for repeated requests
+    - Configurable timeout for image downloads (15s for mini vs 30s for full)
     """
+    # Check cache first
+    cached = _get_cached_mini_response(uri)
+    if cached:
+        return cached
+    
     try:
-        with ImagePathContext(uri) as image_path:
-            c2pa_data = extract_c2pa_data(image_path)
+        # Use shorter timeout for mini API (15s instead of 30s)
+        with ImagePathContext(uri, timeout=15) as image_path:
+            # Use optimized minimal extraction instead of full extraction
+            c2pa_data = extract_c2pa_minimal(image_path)
             
             if not c2pa_data:
-                return {
+                response = {
                     'creator': None,
                     'issued_by': None,
                     'issued_on': None,
                     'status': 'Unverified',
                     'more': f'https://apps.thecontrarian.in/c2pa/?uri={uri}'
                 }
+                _set_cached_mini_response(uri, response)
+                return response
             
             # Extract creator from author_info
             author_info = c2pa_data.get('author_info', {})
@@ -788,18 +882,23 @@ async def get_c2pa_mini(uri: str = Query(..., description="Image file path or UR
             # Determine verification status
             status = 'Authenticity Verified' if c2pa_data else 'Unverified'
             
-            return {
+            response = {
                 'creator': creator,
                 'issued_by': issued_by,
                 'issued_on': issued_on,
                 'status': status,
                 'more': f'https://apps.thecontrarian.in/c2pa/?uri={uri}'
             }
+            
+            # Cache the response
+            _set_cached_mini_response(uri, response)
+            return response
         
     except HTTPException:
         raise
     except Exception as e:
-        # Return unverified status on error
+        # Return unverified status on error (don't cache errors)
+        print(f"Error in c2pa_mini: {e}")
         return {
             'creator': None,
             'issued_by': None,
