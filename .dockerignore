@@ -1,0 +1,41 @@
+# Virtual environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Temporary files
+*.log
+*.tmp
+benchmark_*.sh
+
+# Archives
+archive/
