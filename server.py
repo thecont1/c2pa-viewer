@@ -101,6 +101,138 @@ class ImagePathContext:
                 print(f"Error cleaning up temporary file: {e}")
 
 
+# Digital Source Type mappings for human-friendly labels
+DIGITAL_SOURCE_TYPE_LABELS = {
+    'digitalCapture': 'Digital Camera',
+    'negativeFilm': 'Negative Film Scan',
+    'positiveFilm': 'Slide Film Scan',
+    'print': 'Print Scan',
+    'screenCapture': 'Screen Capture',
+    'trainedAlgorithmicMedia': 'Generative AI',
+    'algorithmicallyEnhanced': 'AI Enhanced',
+    'minorHumanEdits': 'Lightly Edited',
+    'compositeCapture': 'Composite (Camera)',
+    'compositeDigital': 'Composite (Digital)',
+    'compositeSynthetic': 'Composite (Synthetic)',
+    'compositeWithTrainedAlgorithmicMedia': 'Composite (AI + Camera)',
+    'multiFrameComputationalCapture': 'Computational Photography',
+    'virtualRecording': 'Virtual Recording',
+    'digitalArt': 'Digital Art',
+    'dataDrivenMedia': 'Data-Driven Media',
+}
+
+
+def get_digital_source_type(c2pa_data: dict) -> tuple:
+    """Extract digital source type from C2PA data.
+    
+    Returns tuple of (source_type_code, human_readable_label).
+    Looks for digitalSourceType in IPTC assertion, then infers from actions and ingredients.
+    """
+    if not c2pa_data:
+        return None, None
+    
+    # Check claim_generator for AI tools
+    claim_generator = (c2pa_data.get('basic_info', {}).get('claim_generator') or '').lower()
+    ai_tools = ['firefly', 'dall-e', 'dalle', 'midjourney', 'stable diffusion', 
+                'generative fill', 'generative remove', 'generative']
+    if any(tool in claim_generator for tool in ai_tools):
+        return 'trainedAlgorithmicMedia', 'Generative AI'
+    
+    # Check assertions for IPTC digitalSourceType
+    for assertion in c2pa_data.get('assertions', []):
+        label = assertion.get('label') or ''
+        data = assertion.get('data', {})
+        
+        # Check for IPTC Photo Metadata assertion
+        if 'iptc' in label.lower() or 'photo-metadata' in label.lower():
+            source_type = data.get('digitalSourceType')
+            if source_type:
+                friendly = DIGITAL_SOURCE_TYPE_LABELS.get(source_type, source_type)
+                return source_type, friendly
+        
+        # Check CreativeWork for additional metadata
+        if 'CreativeWork' in label:
+            # Some implementations put it here
+            source_type = data.get('digitalSourceType')
+            if source_type:
+                friendly = DIGITAL_SOURCE_TYPE_LABELS.get(source_type, source_type)
+                return source_type, friendly
+        
+        # Check c2pa.actions for AI operations
+        if 'actions' in label.lower():
+            actions_list = data.get('actions', [])
+            for action in actions_list:
+                action_name = (action.get('action') or '').lower()
+                software_agent = (action.get('softwareAgent') or '').lower()
+                parameters = action.get('parameters', {}) or {}
+                
+                # Check action name for AI keywords
+                if 'generative' in action_name or 'ai' in action_name:
+                    return 'trainedAlgorithmicMedia', 'Generative AI'
+                
+                # Check software agent for known AI tools
+                if any(tool in software_agent for tool in ai_tools):
+                    return 'trainedAlgorithmicMedia', 'Generative AI'
+                
+                # Check parameters for AI operations
+                for key, value in parameters.items():
+                    key_lower = (key or '').lower()
+                    value_lower = str(value or '').lower()
+                    
+                    # Check for AI-related parameter keys or values
+                    if any(kw in key_lower for kw in ['firefly', 'generative', 'ai', 'text_to_image']):
+                        return 'trainedAlgorithmicMedia', 'Generative AI'
+                    if any(kw in value_lower for kw in ['text_to_image', 'generative', 'firefly']):
+                        return 'trainedAlgorithmicMedia', 'Generative AI'
+    
+    # Check actions for AI-related software and operations (legacy format)
+    actions = c2pa_data.get('actions', [])
+    for action in actions:
+        action_name = (action.get('action') or '').lower()
+        software_agent = (action.get('softwareAgent') or '').lower()
+        parameters = action.get('parameters', {}) or {}
+        
+        # Check action name for AI keywords
+        if 'generative' in action_name or 'ai' in action_name:
+            return 'trainedAlgorithmicMedia', 'Generative AI'
+        
+        # Check software agent for known AI tools
+        if any(tool in software_agent for tool in ai_tools):
+            return 'trainedAlgorithmicMedia', 'Generative AI'
+        
+        # Check parameters for AI operations
+        for key, value in parameters.items():
+            key_lower = (key or '').lower()
+            value_lower = str(value or '').lower()
+            
+            # Check for AI-related parameter keys or values
+            if any(kw in key_lower for kw in ['firefly', 'generative', 'ai', 'text_to_image']):
+                return 'trainedAlgorithmicMedia', 'Generative AI'
+            if any(kw in value_lower for kw in ['text_to_image', 'generative', 'firefly']):
+                return 'trainedAlgorithmicMedia', 'Generative AI'
+    
+    # Infer from ingredient format
+    ingredients = c2pa_data.get('ingredients', [])
+    if ingredients:
+        for ingredient in ingredients:
+            fmt = (ingredient.get('format') or '').lower()
+            title = (ingredient.get('title') or '').lower()
+            
+            # Raw camera formats
+            if 'dng' in fmt or 'raw' in fmt or title.endswith('.dng') or title.endswith('.raw'):
+                return 'digitalCapture', 'Digital Camera (RAW)'
+            
+            # Standard image formats from camera
+            if 'jpeg' in fmt or 'jpg' in fmt or 'tiff' in fmt:
+                return 'digitalCapture', 'Digital Camera'
+    
+    # Default: if we have C2PA data with actions but no AI detected, assume digital capture
+    if c2pa_data.get('actions') or c2pa_data.get('ingredients'):
+        return 'digitalCapture', 'Digital Camera'
+    
+    return None, None
+
+
 def extract_c2pa_data(image_path: str):
     """Extract C2PA manifest data from an image."""
     try:
@@ -130,6 +262,7 @@ def extract_c2pa_data(image_path: str):
             'ingredients': [],
             'actions': [],
             'author_info': {},
+            'digital_source_type': None,
         }
         
         # Extract assertions
@@ -164,6 +297,13 @@ def extract_c2pa_data(image_path: str):
                 'instance_id': ingredient.get('instance_id')
             })
         
+        # Determine digital source type
+        source_code, source_label = get_digital_source_type(result)
+        result['digital_source_type'] = {
+            'code': source_code,
+            'label': source_label
+        }
+        
         return result
         
     except Exception as e:
@@ -177,9 +317,11 @@ def extract_c2pa_minimal(image_path: str):
     Optimized version that extracts only what's needed for the mini API:
     - signature_info (for issuer and timestamp)
     - author_info (for creator name)
+    - ingredients (for digital source type inference)
+    - actions (for AI detection)
+    - basic_info (for claim_generator AI detection)
     
-    This avoids extracting actions, ingredients, and other assertions
-    that aren't used by the mini endpoint.
+    This avoids extracting full assertions that aren't used by the mini endpoint.
     """
     try:
         reader = c2pa.Reader(image_path)
@@ -199,15 +341,49 @@ def extract_c2pa_minimal(image_path: str):
         # Extract ONLY what mini API needs
         result = {
             'signature_info': manifest.get('signature_info', {}),
-            'author_info': {}
+            'author_info': {},
+            'ingredients': [],
+            'assertions': [],
+            'actions': [],
+            'basic_info': {
+                'claim_generator': manifest.get('claim_generator', '')
+            }
         }
         
         # Extract author from CreativeWork assertion only (if exists)
-        # Stop immediately after finding it to avoid unnecessary iterations
         for assertion in manifest.get('assertions', []):
-            if assertion.get('label') == 'stds.schema-org.CreativeWork':
+            label = assertion.get('label', '')
+            if label == 'stds.schema-org.CreativeWork':
                 result['author_info'] = assertion.get('data', {})
-                break  # Early exit after finding the needed assertion
+            # Keep assertions for digital source type detection
+            result['assertions'].append({
+                'label': label,
+                'data': assertion.get('data', {})
+            })
+        
+        # Extract ingredients for digital source type inference
+        for ingredient in manifest.get('ingredients', []):
+            result['ingredients'].append({
+                'title': ingredient.get('title'),
+                'format': ingredient.get('format'),
+                'relationship': ingredient.get('relationship'),
+                'instance_id': ingredient.get('instance_id')
+            })
+        
+        # Extract actions for AI detection (if present at manifest level)
+        for action in manifest.get('actions', []):
+            result['actions'].append({
+                'action': action.get('action'),
+                'softwareAgent': action.get('softwareAgent'),
+                'parameters': action.get('parameters')
+            })
+        
+        # Determine digital source type
+        source_code, source_label = get_digital_source_type(result)
+        result['digital_source_type'] = {
+            'code': source_code,
+            'label': source_label
+        }
         
         return result
         
@@ -783,10 +959,14 @@ async def get_c2pa_metadata(uri: str = Query(..., description="Image file path o
             # Extract C2PA thumbnails (claim_thumbnail and ingredient_thumbnail)
             thumbnails = extract_thumbnails_from_image(image_path)
             
+            # Extract digital_source_type for easy frontend access
+            digital_source_type = c2pa_data.get('digital_source_type') if c2pa_data else None
+            
             return {
                 'provenance': provenance,
                 'c2pa_data': c2pa_data,
-                'thumbnails': thumbnails
+                'thumbnails': thumbnails,
+                'digital_source_type': digital_source_type
             }
         
     except HTTPException:
@@ -859,6 +1039,7 @@ async def get_c2pa_mini(uri: str = Query(..., description="Image file path or UR
                     'issued_by': None,
                     'issued_on': None,
                     'status': 'Unverified',
+                    'digital_source_type': None,
                     'more': f'https://apps.thecontrarian.in/c2pa/?uri={uri}'
                 }
                 _set_cached_mini_response(uri, response)
@@ -882,11 +1063,15 @@ async def get_c2pa_mini(uri: str = Query(..., description="Image file path or UR
             # Determine verification status
             status = 'Authenticity Verified' if c2pa_data else 'Unverified'
             
+            # Get digital source type
+            digital_source = c2pa_data.get('digital_source_type', {})
+            
             response = {
                 'creator': creator,
                 'issued_by': issued_by,
                 'issued_on': issued_on,
                 'status': status,
+                'digital_source_type': digital_source.get('label') if digital_source else None,
                 'more': f'https://apps.thecontrarian.in/c2pa/?uri={uri}'
             }
             
@@ -904,6 +1089,7 @@ async def get_c2pa_mini(uri: str = Query(..., description="Image file path or UR
             'issued_by': None,
             'issued_on': None,
             'status': 'Unverified',
+            'digital_source_type': None,
             'more': f'https://apps.thecontrarian.in/c2pa/?uri={uri}'
         }
 
@@ -994,6 +1180,10 @@ async def upload_image(file: UploadFile = File(...)):
         # Include C2PA provenance data
         provenance = format_provenance_for_web(c2pa_data) if c2pa_data else []
         response[display_name]['provenance'] = provenance
+        
+        # Include digital source type
+        digital_source_type = c2pa_data.get('digital_source_type') if c2pa_data else None
+        response[display_name]['digital_source_type'] = digital_source_type
         
         # Create a data URL for the main image
         with open(temp_file_path, 'rb') as f:

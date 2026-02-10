@@ -193,6 +193,34 @@ function updateC2PAStatus(hasC2PA, provenanceCount = 0) {
     }
 }
 
+function updateDigitalSourceType(digitalSourceType) {
+    const section = document.getElementById('digitalSourceSection');
+    const card = document.getElementById('digitalSourceCard');
+    const label = document.getElementById('digitalSourceLabel');
+    const icon = document.getElementById('digitalSourceIcon');
+    
+    if (!section || !card || !label) return;
+    
+    if (digitalSourceType && digitalSourceType.label) {
+        label.textContent = digitalSourceType.label;
+        section.style.display = 'block';
+        
+        // Remove previous state classes
+        card.classList.remove('verified', 'ai-generated');
+        
+        // Add appropriate class based on source type
+        if (digitalSourceType.code === 'trainedAlgorithmicMedia' || digitalSourceType.code === 'algorithmicallyEnhanced') {
+            // AI-generated content - orange/warning style
+            card.classList.add('ai-generated');
+        } else {
+            // Camera capture or other verified source - green/success style
+            card.classList.add('verified');
+        }
+    } else {
+        section.style.display = 'none';
+    }
+}
+
 function renderPhotographyMetadata(metadata) {
     const photography = metadata.photography || {};
     
@@ -343,7 +371,8 @@ async function loadC2PAMetadataFromApi(uri) {
         const data = await response.json();
         return {
             provenance: data.provenance,
-            thumbnails: data.thumbnails || {}
+            thumbnails: data.thumbnails || {},
+            digital_source_type: data.digital_source_type || null
         };
     } catch (error) {
         console.error('Error loading C2PA metadata:', error);
@@ -884,6 +913,9 @@ async function uploadImageFile(file) {
             renderC2PAMetadata(null, false);
         }
         
+        // Update digital source type badge
+        updateDigitalSourceType(metadata.digital_source_type);
+        
         // Load and display C2PA metadata
         if (metadata.thumbnails && metadata.thumbnails.ingredient_thumbnail) {
             const sourceImage = document.getElementById('sourceImage');
@@ -1031,6 +1063,9 @@ async function init() {
                 renderC2PAMetadata(null, false);
             }
             
+            // Update digital source type badge
+            updateDigitalSourceType(c2paData?.digital_source_type);
+            
             // Render thumbnails from C2PA data
             renderSourceThumbnail(c2paData?.thumbnails);
         }
@@ -1089,6 +1124,9 @@ function initResetButton() {
         
         // Reset C2PA status
         updateC2PAStatus(false, 0);
+        
+        // Reset digital source type
+        updateDigitalSourceType(null);
     });
 }
 
