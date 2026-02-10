@@ -6,7 +6,9 @@ An API-based image viewer web application that allows users to verify [C2PA cont
 
 ### 1. Image Viewer
 - Displays the main image with a clean white background and subtle shadow effect
-- Shows a "Verified" badge with green checkmark for C2PA-verified images
+- Shows verification status badges:
+  - **Content Credentials**: Green "Authenticity Verified" badge for C2PA-verified images
+  - **Digital Source Type**: Shows image origin (e.g., "Digital Camera (RAW)", "Generative AI")
 - Responsive design that works on all screen sizes
 
 ### 2. Metadata Extraction
@@ -22,7 +24,10 @@ An API-based image viewer web application that allows users to verify [C2PA cont
 - Extracts and displays C2PA thumbnails (claim and ingredient images)
 - Shows provenance history with timestamps and detailed edit actions
 - Displays specific adjustment values (e.g., "Blacks: -5", "Clarity: +20")
-- Displays verification status with visual indicators
+- **Digital Source Type Detection**:
+  - Detects camera capture (DNG, RAW files → "Digital Camera (RAW)")
+  - Detects AI-generated content (Adobe Firefly, DALL-E, Midjourney → "Generative AI")
+  - Shows orange badge for AI-generated, green badge for camera capture
 
 ### 4. API Integration
 - RESTful API for metadata extraction
@@ -37,7 +42,8 @@ An API-based image viewer web application that allows users to verify [C2PA cont
 | Endpoint | Method | Description | Performance |
 |----------|--------|-------------|-------------|
 | `/api/exif_metadata` | GET | EXIF, IPTC, GPS metadata only | Fast (~10-50ms) |
-| `/api/c2pa_metadata` | GET | C2PA provenance + thumbnails | Slower (~100-500ms+) |
+| `/api/c2pa_metadata` | GET | C2PA provenance, thumbnails, digital source type | Slower (~100-500ms+) |
+| `/api/c2pa_mini` | GET | Minimal C2PA for quick verification | Fast (~50-200ms) |
 | `/api/upload` | POST | Upload image, returns all metadata | Variable |
 
 ### GET `/api/exif_metadata`
@@ -80,7 +86,7 @@ GET /api/exif_metadata?uri=https://example.com/image.jpg
 
 ### GET `/api/c2pa_metadata`
 
-Retrieve C2PA provenance data, including signature information, edit actions, and embedded thumbnails.
+Retrieve C2PA provenance data, including signature information, edit actions, embedded thumbnails, and digital source type.
 
 **Query Parameters:**
 - `uri` (required): Image file path or URL
@@ -97,15 +103,40 @@ GET /api/c2pa_metadata?uri=https://example.com/image.jpg
     { "name": "Claim Generator", "generator": "Lightroom Classic 15.1" },
     { "name": "Issued By", "issuer": "Adobe Inc." },
     { "name": "Issued On", "date": "Jan 08, 2026 at 04:21 PM IST" },
-    { "name": "Author", "author": "John Doe" },
-    { "name": "Action", "action": "c2pa.color_adjustments", "parameters": {...} },
-    { "name": "Verification", "verification": "Signature Valid" }
   ],
   "c2pa_data": { "basic_info": {...}, "signature_info": {...}, "assertions": [...] },
   "thumbnails": {
     "claim_thumbnail": "base64_encoded_data...",
     "ingredient_thumbnail": "base64_encoded_data..."
+  },
+  "digital_source_type": {
+    "code": "digitalCapture",
+    "label": "Digital Camera (RAW)"
   }
+}
+```
+
+### GET `/api/c2pa_mini`
+
+Retrieve minimal C2PA credentials for quick trust verification (e.g., hover previews). Optimized for speed with 5-minute response caching.
+
+**Query Parameters:**
+- `uri` (required): Image file path or URL
+
+**Example:**
+```
+GET /api/c2pa_mini?uri=https://example.com/image.jpg
+```
+
+**Response:**
+```json
+{
+  "creator": "John Doe",
+  "issued_by": "Adobe Inc.",
+  "issued_on": "Jan 08, 2026 at 04:21 PM IST",
+  "status": "Authenticity Verified",
+  "digital_source_type": "Digital Camera (RAW)",
+  "more": "https://apps.thecontrarian.in/c2pa/?uri=..."
 }
 ```
 
@@ -136,6 +167,7 @@ file: [image file]
     "iptc": {...},
     "provenance": [...],
     "thumbnails": {...},
+    "digital_source_type": { "code": "digitalCapture", "label": "Digital Camera (RAW)" },
     "image_data": "data:image/jpeg;base64,..."
   }
 }
@@ -160,82 +192,87 @@ file: [image file]
 ### Installation
 1. Clone the repository
    ```bash
-   # Open Terminal. 
-   # Change the current working directory to where you want the cloned directory.
-
    git clone https://github.com/thecont1/c2pa-viewer.git
+   cd c2pa-viewer
    ```
 
 2. Install dependencies using UV:
-   ```
+   ```bash
    uv sync
    ```
 
-### Test the API endpoints
-The test script makes HTTP requests to localhost:8080, so the server must be running first.
+### Running the Server
 
-1. Start the server in one terminal:
+Start the server:
+```bash
+uv run uvicorn server:app --host 0.0.0.0 --port 8080
+```
 
-   ```zsh
-   uv run python3 server.py
-   ```
+The server will start on `http://localhost:8080`.
 
-2. Run tests in another terminal:
+### Testing the API
 
-   ```zsh
-   uv run python3 test_server.py
-   ```
+Run the test script (requires server to be running):
 
-   The server will start on `http://localhost:8080` and serve both the API and frontend.
+```bash
+# Test with default remote image
+uv run python test_server.py
 
-3. Access the application:
+# Test with a local file
+uv run python test_server.py --uri /path/to/image.jpg --skip-upload
 
-   - Frontend: `http://localhost:8080/`
+# Test with a URL
+uv run python test_server.py --uri https://example.com/image.jpg
 
-   - API endpoints: 
-      - `http://localhost:8080/api/exif_metadata`
-      - `http://localhost:8080/api/c2pa_metadata`
-      - `http://localhost:8080/api/upload`
+# Test upload endpoint
+uv run python test_server.py --uri /path/to/image.jpg
+```
 
-4. **Typical usage**: Pass an image URL to the app.
+### Usage
 
-   [http://localhost:8080/?uri=https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg](http://localhost:8080/?uri=https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg)
+Access the application:
+- Frontend: `http://localhost:8080/`
+- With image: `http://localhost:8080/?uri=https://example.com/image.jpg`
 
-   This photograph of a moonrise over Accra, Ghana is quite surreal. But is it real? And how real is it? Go ahead and verify its content credentials.
+Example:
+[http://localhost:8080/?uri=https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg](http://localhost:8080/?uri=https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg)
 
 ## Technology Stack
 
 - **Backend**: Python 3.12, FastAPI, c2pa-python
-
 - **Frontend**: HTML5, CSS3, JavaScript
-
-- **Metadata Extraction**: [c2pa-python](https://github.com/contentauth/c2pa-python) (official C2PA SDK), [pillow](https://github.com/python-pillow/Pillow) (for EXIF and image processing)
-
+- **Metadata Extraction**: 
+  - [c2pa-python](https://github.com/contentauth/c2pa-python) (official C2PA SDK)
+  - [pillow](https://github.com/python-pillow/Pillow) (EXIF and image processing)
 - **Server**: Uvicorn (ASGI server)
 
 ## Main Entry Points
 
-- **Frontend**: `index.html` - main HTML file for the application
-
-- **Backend**: `server.py` - FastAPI server that handles all metadata extraction
-
-- **Styles**: `styles.css` - CSS file for styling the application
-
-- **Script**: `script.js` - JavaScript file for rendering metadata
-
-- **Tests**: `test_server.py` - API endpoint tests
+| File | Description |
+|------|-------------|
+| `index.html` | Main HTML file for the application |
+| `server.py` | FastAPI server with all API endpoints |
+| `styles.css` | CSS styling |
+| `script.js` | Frontend JavaScript for rendering metadata |
+| `test_server.py` | API endpoint tests |
 
 ## Architecture Notes
 
 ### API Design
-The API separates EXIF extraction from C2PA verification for performance reasons:
-- **EXIF/IPTC extraction** is fast (simple binary parsing)
-- **C2PA verification** is slower (cryptographic signature verification, certificate chain validation)
+The API separates EXIF extraction from C2PA verification for performance:
+- **EXIF/IPTC extraction** is fast (simple binary parsing, ~10-50ms)
+- **C2PA verification** is slower (cryptographic signature verification, ~100-500ms+)
 
-This separation allows external programs to request only the data they need without incurring unnecessary overhead.
+This separation allows clients to request only the data they need.
+
+### Digital Source Type Detection
+The system detects image origin from C2PA data:
+1. Checks `claim_generator` for AI tools (Firefly, DALL-E, Midjourney, etc.)
+2. Checks actions for AI-related operations (`text_to_image`, generative fills)
+3. Checks ingredient formats for camera types (DNG, RAW → "Digital Camera (RAW)")
+4. Falls back to "Digital Camera" for standard C2PA images
 
 ### Why FastAPI over Flask
-The project uses FastAPI instead of Flask because:
 - Modern async/await support
 - Built-in data validation with Pydantic
 - Automatic API documentation (OpenAPI/Swagger)
@@ -243,7 +280,6 @@ The project uses FastAPI instead of Flask because:
 - Higher performance
 
 ### Why c2pa-python over ExifTool
-The project uses the c2pa-python library instead of ExifTool because:
 - Official C2PA SDK with proper API
 - More reliable metadata extraction
 - Better thumbnail extraction
@@ -254,13 +290,14 @@ The project uses the c2pa-python library instead of ExifTool because:
 ```
 c2pa-viewer/
 ├── index.html           # Main HTML file
-├── styles.css           # Stylesheet for the application
-├── script.js            # JavaScript for frontend logic
+├── styles.css           # Stylesheet
+├── script.js            # Frontend JavaScript
 ├── server.py            # FastAPI server with all API endpoints
 ├── test_server.py       # API endpoint tests
 ├── pyproject.toml       # Project dependencies (UV)
 ├── uv.lock              # Dependency lock file
-├── archive/             # Archived legacy files
+├── Dockerfile           # Docker configuration
+├── fly.toml             # Fly.io deployment config
 └── README.md            # This file
 ```
 
