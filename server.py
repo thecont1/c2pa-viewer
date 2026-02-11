@@ -122,6 +122,83 @@ DIGITAL_SOURCE_TYPE_LABELS = {
 }
 
 
+def extract_social_links(assertion_data: dict) -> dict:
+    """Extract social media links from CreativeWork assertion data.
+    
+    Args:
+        assertion_data: The CreativeWork assertion data containing social URLs
+    
+    Returns:
+        Dictionary with social media links (instagram, twitter, linkedin)
+    """
+    social_links = {}
+    
+    if not assertion_data:
+        return social_links
+    
+    # Extract from author array's @id fields (common C2PA format)
+    author_array = assertion_data.get('author', [])
+    if isinstance(author_array, list):
+        for author in author_array:
+            if isinstance(author, dict):
+                author_id = author.get('@id', '')
+                if author_id and isinstance(author_id, str):
+                    author_id_lower = author_id.lower()
+                    if 'instagram.com' in author_id_lower:
+                        social_links['instagram'] = author_id
+                    elif 'twitter.com' in author_id_lower or 'x.com' in author_id_lower:
+                        social_links['twitter'] = author_id
+                    elif 'linkedin.com' in author_id_lower:
+                        social_links['linkedin'] = author_id
+    
+    # Map of social media types to their potential keys in the assertion
+    social_mappings = {
+        'instagram': ['instagram', 'instagram_url'],
+        'twitter': ['twitter', 'twitter_url', 'x_url'],
+        'linkedin': ['linkedin', 'linkedin_url']
+    }
+    
+    # Check for direct fields
+    for social_type, keys in social_mappings.items():
+        # Skip if already extracted from author array
+        if social_type in social_links:
+            continue
+        for key in keys:
+            value = assertion_data.get(key)
+            if value:
+                # Ensure URL is complete
+                if not value.startswith(('http://', 'https://')):
+                    value = f'https://{value}'
+                social_links[social_type] = value
+                break
+    
+    # Also check in 'url' field for social profiles
+    url_field = assertion_data.get('url')
+    if url_field and isinstance(url_field, str):
+        url_lower = url_field.lower()
+        if 'instagram.com' in url_lower and 'instagram' not in social_links:
+            social_links['instagram'] = url_field
+        elif ('twitter.com' in url_lower or 'x.com' in url_lower) and 'twitter' not in social_links:
+            social_links['twitter'] = url_field
+        elif 'linkedin.com' in url_lower and 'linkedin' not in social_links:
+            social_links['linkedin'] = url_field
+    
+    # Check in 'url' array if it exists
+    urls = assertion_data.get('url', [])
+    if isinstance(urls, list):
+        for url in urls:
+            if isinstance(url, str):
+                url_lower = url.lower()
+                if 'instagram.com' in url_lower and 'instagram' not in social_links:
+                    social_links['instagram'] = url
+                elif ('twitter.com' in url_lower or 'x.com' in url_lower) and 'twitter' not in social_links:
+                    social_links['twitter'] = url
+                elif 'linkedin.com' in url_lower and 'linkedin' not in social_links:
+                    social_links['linkedin'] = url
+    
+    return social_links
+
+
 def get_digital_source_type(c2pa_data: dict) -> tuple:
     """Extract digital source type from C2PA data.
     
@@ -287,6 +364,8 @@ def extract_c2pa_data(image_path: str):
             
             elif label == 'stds.schema-org.CreativeWork':
                 result['author_info'] = assertion_data
+                # Extract and add social links to author_info
+                result['author_info']['social_links'] = extract_social_links(assertion_data)
         
         # Extract ingredients
         for ingredient in manifest.get('ingredients', []):
@@ -354,7 +433,8 @@ def extract_c2pa_minimal(image_path: str):
         for assertion in manifest.get('assertions', []):
             label = assertion.get('label', '')
             if label == 'stds.schema-org.CreativeWork':
-                result['author_info'] = assertion.get('data', {})
+                assertion_data = assertion.get('data', {})
+                result['author_info'] = assertion_data
             # Keep assertions for digital source type detection
             result['assertions'].append({
                 'label': label,
@@ -965,6 +1045,7 @@ async def get_c2pa_metadata(uri: str = Query(..., description="Image file path o
             return {
                 'provenance': provenance,
                 'c2pa_data': c2pa_data,
+                'author_info': c2pa_data.get('author_info') if c2pa_data else None,
                 'thumbnails': thumbnails,
                 'digital_source_type': digital_source_type
             }
