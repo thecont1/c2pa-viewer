@@ -233,7 +233,11 @@ function renderPhotographyMetadata(metadata) {
     setFullText('focalLength', photography.focal_length || 'Unknown');
     setFullText('dateOriginal', photography.date_original || 'Unknown');
     setFullText('dateDigitized', photography.date_digitized || 'Unknown');
-    setFullText('artist', photography.artist || 'Unknown');
+    // Handle case where artist might be an object or array
+    const artistValue = typeof photography.artist === 'string' ? photography.artist : 
+                       Array.isArray(photography.artist) ? photography.artist.join(', ') : 
+                       'Unknown';
+    setFullText('artist', artistValue);
     setFullText('colorSpace', photography.color_space || 'Unknown');
     setFullText('colorProfile', photography.color_profile || 'Unknown');
 }
@@ -372,7 +376,8 @@ async function loadC2PAMetadataFromApi(uri) {
         return {
             provenance: data.provenance,
             thumbnails: data.thumbnails || {},
-            digital_source_type: data.digital_source_type || null
+            digital_source_type: data.digital_source_type || null,
+            author_info: data.author_info || null
         };
     } catch (error) {
         console.error('Error loading C2PA metadata:', error);
@@ -623,6 +628,17 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
 }
 
 function renderAuthorInfo(authorInfo) {
+    // Update Artist field with C2PA author name if available
+    const artistField = document.getElementById('artist');
+    // Check multiple possible author name fields: name, author, identifier
+    const authorName = authorInfo.name || authorInfo.author || authorInfo.identifier;
+    if (authorName && typeof authorName === 'string' && authorName.trim() && artistField) {
+        // If EXIF artist is empty or 'Unknown', use C2PA author
+        if (!artistField.textContent || artistField.textContent === 'Unknown') {
+            artistField.textContent = authorName.trim();
+        }
+    }
+    
     // Website
     const websiteItem = document.getElementById('authorWebsiteItem');
     const websiteValue = document.getElementById('authorWebsite');
@@ -676,16 +692,65 @@ function renderAuthorInfo(authorInfo) {
     // Social Media Links
     const socialContainer = document.getElementById('authorSocial');
     const socialLinks = document.getElementById('socialLinks');
-    if (authorInfo.sameAs && authorInfo.sameAs.length > 0 && socialContainer && socialLinks) {
-        let socialHtml = '';
+    
+    // Collect all social links from various possible fields (avoid duplicates)
+    const allSocialLinks = new Set();
+    
+    // Add links from sameAs array
+    if (authorInfo.sameAs && Array.isArray(authorInfo.sameAs)) {
         authorInfo.sameAs.forEach(url => {
-            const platform = getSocialPlatform(url);
-            socialHtml += `<a href="${url}" target="_blank" rel="noopener" class="social-link ${platform}">${platform}</a>`;
+            if (typeof url === 'string' && url.trim()) {
+                allSocialLinks.add(url.trim());
+            }
         });
-        socialLinks.innerHTML = socialHtml;
-        socialContainer.style.display = 'block';
-    } else if (socialContainer) {
-        socialContainer.style.display = 'none';
+    }
+    
+    // Add links from social_links object (new format with instagram, twitter, linkedin keys)
+    if (authorInfo.social_links && typeof authorInfo.social_links === 'object') {
+        Object.entries(authorInfo.social_links).forEach(([platform, url]) => {
+            if (url && typeof url === 'string' && url.trim()) {
+                allSocialLinks.add(url.trim());
+            }
+        });
+    }
+    
+    // Also check 'url' field directly (common in C2PA CreativeWork)
+    if (authorInfo.url && typeof authorInfo.url === 'string') {
+        const urlLower = authorInfo.url.toLowerCase();
+        // Only add if it's a social media URL (not just a personal website)
+        if ((urlLower.includes('instagram') || urlLower.includes('twitter') || 
+             urlLower.includes('linkedin') || urlLower.includes('facebook'))) {
+            allSocialLinks.add(authorInfo.url.trim());
+        }
+    }
+    
+    // Check 'url' array if it exists
+    if (authorInfo.url && Array.isArray(authorInfo.url)) {
+        authorInfo.url.forEach(url => {
+            if (typeof url === 'string' && url.trim()) {
+                const urlLower = url.toLowerCase();
+                if (urlLower.includes('instagram') || urlLower.includes('twitter') || 
+                    urlLower.includes('linkedin') || urlLower.includes('facebook')) {
+                    allSocialLinks.add(url.trim());
+                }
+            }
+        });
+    }
+    
+    // Show social media container only if we have social links
+    if (socialContainer && socialLinks) {
+        if (allSocialLinks.size > 0) {
+            let socialHtml = '';
+            allSocialLinks.forEach(url => {
+                const platform = getSocialPlatform(url);
+                socialHtml += `<a href="${url}" target="_blank" rel="noopener" class="social-link ${platform}" title="${platform}">${getSocialIcon(platform)}</a>`;
+            });
+            socialLinks.innerHTML = socialHtml;
+            socialContainer.style.display = 'flex';
+        } else {
+            socialLinks.innerHTML = '';
+            socialContainer.style.display = 'none';
+        }
     }
 }
 
@@ -704,6 +769,26 @@ function getSocialPlatform(url) {
     if (domain.includes('500px')) return '500px';
     if (domain.includes('unsplash')) return 'unsplash';
     return 'website';
+}
+
+function getSocialIcon(platform) {
+    // SVG icons for social media platforms
+    const icons = {
+        instagram: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>`,
+        twitter: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`,
+        linkedin: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>`,
+        facebook: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`,
+        youtube: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`,
+        tiktok: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>`,
+        behance: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M22 7h-7V5h7v2zm1.726 10c-.442 1.297-2.029 3-5.101 3-3.074 0-5.564-1.729-5.564-5.675 0-3.91 2.325-5.92 5.466-5.92 3.082 0 4.964 1.782 5.375 4.426.078.506.109 1.188.095 2.14H15.97c.13 3.211 3.483 3.312 4.588 2.029h3.168zm-7.686-4h4.965c-.105-1.547-1.136-2.219-2.477-2.219-1.466 0-2.277.768-2.488 2.219zm-9.574 6.988H0V5.021h6.953c5.476.081 5.58 5.444 2.72 6.906 3.461 1.26 3.577 8.061-3.207 8.061zM3 11h3.584c2.508 0 2.906-3-.312-3H3v3zm3.391 3H3v3.016h3.341c3.055 0 2.868-3.016.05-3.016z"/></svg>`,
+        dribbble: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 24C5.385 24 0 18.615 0 12S5.385 0 12 0s12 5.385 12 12-5.385 12-12 12zm10.12-10.358c-.35-.11-3.17-.953-6.384-.438 1.34 3.684 1.887 6.684 1.992 7.308 2.3-1.555 3.936-4.02 4.395-6.87zm-6.115 7.808c-.153-.9-.75-4.032-2.19-7.77l-.066.02c-5.79 2.015-7.86 6.025-8.04 6.4 1.73 1.36 3.94 2.166 6.27 2.166 1.42 0 2.77-.29 4-.814zm-11.62-2.58c.232-.4 3.045-5.055 8.332-6.765.135-.045.27-.084.405-.12-.26-.585-.54-1.167-.832-1.74C7.17 11.775 2.206 11.71 1.756 11.7l-.004.312c0 2.633.998 5.037 2.634 6.855zm-2.42-8.955c.46.008 4.683.026 9.477-1.248-1.698-3.018-3.53-5.558-3.8-5.928-2.868 1.35-5.01 3.99-5.676 7.17zM9.6 2.052c.282.38 2.145 2.914 3.822 6 3.645-1.365 5.19-3.44 5.373-3.702-1.81-1.61-4.19-2.586-6.795-2.586-.825 0-1.63.1-2.4.285zm10.335 3.483c-.218.29-1.935 2.493-5.724 4.04.24.49.47.985.68 1.486.08.18.15.36.22.53 3.41-.43 6.8.26 7.14.33-.02-2.42-.88-4.64-2.31-6.38z"/></svg>`,
+        github: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>`,
+        flickr: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 22C6.486 22 2 17.514 2 12S6.486 2 12 2s10 4.486 10 10-4.486 10-10 10zm0-16c-3.314 0-6 2.686-6 6s2.686 6 6 6 6-2.686 6-6-2.686-6-6-6zm0 10c-2.206 0-4 1.794-4 4s1.794 4 4 4 4-1.794 4-4-1.794-4-4-4z"/></svg>`,
+        '500px': `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm0 22.08c-1.336 0-2.436-1.08-2.436-2.436 0-1.344 1.08-2.436 2.436-2.436 1.344 0 2.436 1.08 2.436 2.436 0 1.344-1.08 2.436-2.436 2.436zm5.04-9.72c-1.548-1.488-4.104-1.8-6.336-1.04-1.02.344-2.04.66-3.12.96-2.544.72-4.728.24-6.576-.24l.96 5.88c1.44 1.08 3.24 1.68 5.16 1.68 2.88 0 5.04-1.32 6.136-2.904.473-.685.751-1.496.751-2.376 0-1.776-1.416-3.24-3.031-3.24v.24z"/></svg>`,
+        unsplash: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7.5 6.75V0h9v6.75h-9zm9 3.75H24V24H0V10.5h7.5v6.75h9V10.5z"/></svg>`,
+        website: `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>`
+    };
+    return icons[platform] || icons.website;
 }
 
 function renderProvenance(metadata) {
@@ -913,6 +998,11 @@ async function uploadImageFile(file) {
             renderC2PAMetadata(null, false);
         }
         
+        // Render author info from C2PA data if available
+        if (metadata.author_info) {
+            renderAuthorInfo(metadata.author_info);
+        }
+        
         // Update digital source type badge
         updateDigitalSourceType(metadata.digital_source_type);
         
@@ -1024,7 +1114,11 @@ async function init() {
         
         if (metadata) {
             const mainImage = document.getElementById('mainImage');
-            mainImage.src = params.imageUri;
+            if (metadata.image_data) {
+                mainImage.src = metadata.image_data;
+            } else {
+                mainImage.src = params.imageUri;
+            }
             mainImage.style.display = 'block';
             
             // Hide the welcome zone completely when image loads
@@ -1061,6 +1155,11 @@ async function init() {
             } else {
                 updateC2PAStatus(false, 0);
                 renderC2PAMetadata(null, false);
+            }
+            
+            // Render author info from C2PA data if available
+            if (c2paData && c2paData.author_info) {
+                renderAuthorInfo(c2paData.author_info);
             }
             
             // Update digital source type badge

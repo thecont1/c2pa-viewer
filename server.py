@@ -122,6 +122,83 @@ DIGITAL_SOURCE_TYPE_LABELS = {
 }
 
 
+def extract_social_links(assertion_data: dict) -> dict:
+    """Extract social media links from CreativeWork assertion data.
+    
+    Args:
+        assertion_data: The CreativeWork assertion data containing social URLs
+    
+    Returns:
+        Dictionary with social media links (instagram, twitter, linkedin)
+    """
+    social_links = {}
+    
+    if not assertion_data:
+        return social_links
+    
+    # Extract from author array's @id fields (common C2PA format)
+    author_array = assertion_data.get('author', [])
+    if isinstance(author_array, list):
+        for author in author_array:
+            if isinstance(author, dict):
+                author_id = author.get('@id', '')
+                if author_id and isinstance(author_id, str):
+                    author_id_lower = author_id.lower()
+                    if 'instagram.com' in author_id_lower:
+                        social_links['instagram'] = author_id
+                    elif 'twitter.com' in author_id_lower or 'x.com' in author_id_lower:
+                        social_links['twitter'] = author_id
+                    elif 'linkedin.com' in author_id_lower:
+                        social_links['linkedin'] = author_id
+    
+    # Map of social media types to their potential keys in the assertion
+    social_mappings = {
+        'instagram': ['instagram', 'instagram_url'],
+        'twitter': ['twitter', 'twitter_url', 'x_url'],
+        'linkedin': ['linkedin', 'linkedin_url']
+    }
+    
+    # Check for direct fields
+    for social_type, keys in social_mappings.items():
+        # Skip if already extracted from author array
+        if social_type in social_links:
+            continue
+        for key in keys:
+            value = assertion_data.get(key)
+            if value:
+                # Ensure URL is complete
+                if not value.startswith(('http://', 'https://')):
+                    value = f'https://{value}'
+                social_links[social_type] = value
+                break
+    
+    # Also check in 'url' field for social profiles
+    url_field = assertion_data.get('url')
+    if url_field and isinstance(url_field, str):
+        url_lower = url_field.lower()
+        if 'instagram.com' in url_lower and 'instagram' not in social_links:
+            social_links['instagram'] = url_field
+        elif ('twitter.com' in url_lower or 'x.com' in url_lower) and 'twitter' not in social_links:
+            social_links['twitter'] = url_field
+        elif 'linkedin.com' in url_lower and 'linkedin' not in social_links:
+            social_links['linkedin'] = url_field
+    
+    # Check in 'url' array if it exists
+    urls = assertion_data.get('url', [])
+    if isinstance(urls, list):
+        for url in urls:
+            if isinstance(url, str):
+                url_lower = url.lower()
+                if 'instagram.com' in url_lower and 'instagram' not in social_links:
+                    social_links['instagram'] = url
+                elif ('twitter.com' in url_lower or 'x.com' in url_lower) and 'twitter' not in social_links:
+                    social_links['twitter'] = url
+                elif 'linkedin.com' in url_lower and 'linkedin' not in social_links:
+                    social_links['linkedin'] = url
+    
+    return social_links
+
+
 def get_digital_source_type(c2pa_data: dict) -> tuple:
     """Extract digital source type from C2PA data.
     
@@ -287,6 +364,8 @@ def extract_c2pa_data(image_path: str):
             
             elif label == 'stds.schema-org.CreativeWork':
                 result['author_info'] = assertion_data
+                # Extract and add social links to author_info
+                result['author_info']['social_links'] = extract_social_links(assertion_data)
         
         # Extract ingredients
         for ingredient in manifest.get('ingredients', []):
@@ -354,7 +433,8 @@ def extract_c2pa_minimal(image_path: str):
         for assertion in manifest.get('assertions', []):
             label = assertion.get('label', '')
             if label == 'stds.schema-org.CreativeWork':
-                result['author_info'] = assertion.get('data', {})
+                assertion_data = assertion.get('data', {})
+                result['author_info'] = assertion_data
             # Keep assertions for digital source type detection
             result['assertions'].append({
                 'label': label,
@@ -720,7 +800,8 @@ def format_provenance_for_web(c2pa_data):
                     'telephone': author.get('telephone'),
                     'address': author.get('address'),
                     'jobTitle': author.get('jobTitle'),
-                    'worksFor': author.get('worksFor', {}).get('name') if isinstance(author.get('worksFor'), dict) else author.get('worksFor')
+                    'worksFor': author.get('worksFor', {}).get('name') if isinstance(author.get('worksFor'), dict) else author.get('worksFor'),
+                    'social_links': author_info.get('social_links', {})
                 }
                 provenance.append({
                     'name': 'Author',
@@ -781,9 +862,17 @@ def format_photography_metadata(exif_data):
     if 'FNumber' in exif:
         f_num = exif['FNumber']
         if isinstance(f_num, (int, float)):
-            aperture = f"f/{f_num:.1f}"
+            # Remove trailing zeros (e.g., 8.0 -> 8, 8.5 -> 8.5)
+            formatted = f"{f_num:.1f}"
+            if '.' in formatted:
+                formatted = formatted.rstrip('0').rstrip('.')
+            aperture = f"f/{formatted}"
         elif isinstance(f_num, tuple):
-            aperture = f"f/{f_num[0] / f_num[1]:.1f}"
+            f_value = f_num[0] / f_num[1]
+            formatted = f"{f_value:.1f}"
+            if '.' in formatted:
+                formatted = formatted.rstrip('0').rstrip('.')
+            aperture = f"f/{formatted}"
     
     # Format shutter speed
     shutter_speed = 'Unknown'
@@ -806,10 +895,17 @@ def format_photography_metadata(exif_data):
         fl = exif['FocalLength']
         if isinstance(fl, (int, float)):
             # Remove trailing zeros (e.g., 6.00 -> 6, 6.59 -> 6.59)
-            focal_length = f"{fl:.2f}mm".rstrip('0').rstrip('.')
+            formatted = f"{fl:.2f}"
+            # Remove trailing zeros after decimal point
+            if '.' in formatted:
+                formatted = formatted.rstrip('0').rstrip('.')
+            focal_length = f"{formatted}mm"
         elif isinstance(fl, tuple):
             fl_value = fl[0] / fl[1]
-            focal_length = f"{fl_value:.2f}mm".rstrip('0').rstrip('.')
+            formatted = f"{fl_value:.2f}"
+            if '.' in formatted:
+                formatted = formatted.rstrip('0').rstrip('.')
+            focal_length = f"{formatted}mm"
     
     # Format ISO - ensure it's displayed as integer
     iso = exif.get('ISOSpeedRatings', 'Unknown')
@@ -925,6 +1021,12 @@ async def get_exif_metadata(uri: str = Query(..., description="Image file path o
                     'longitude': str(gps_data['longitude_decimal'])
                 }
             
+            # Note: We don't include base64 image data here because:
+            # 1. The client already has the image URI and can display it directly
+            # 2. Base64 encoding bloats the response by 10-100x (MB vs KB for metadata)
+            # 3. This endpoint is for lightweight metadata extraction only
+            # The /api/upload endpoint includes image_data since uploaded files have no URI
+                
             response = {
                 display_name: {
                     'filename': display_name,
@@ -965,6 +1067,7 @@ async def get_c2pa_metadata(uri: str = Query(..., description="Image file path o
             return {
                 'provenance': provenance,
                 'c2pa_data': c2pa_data,
+                'author_info': c2pa_data.get('author_info') if c2pa_data else None,
                 'thumbnails': thumbnails,
                 'digital_source_type': digital_source_type
             }
@@ -1184,6 +1287,10 @@ async def upload_image(file: UploadFile = File(...)):
         # Include digital source type
         digital_source_type = c2pa_data.get('digital_source_type') if c2pa_data else None
         response[display_name]['digital_source_type'] = digital_source_type
+        
+        # Include author info
+        if c2pa_data:
+            response[display_name]['author_info'] = c2pa_data.get('author_info', {})
         
         # Create a data URL for the main image
         with open(temp_file_path, 'rb') as f:

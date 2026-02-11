@@ -876,6 +876,47 @@ body {
   margin: 0;
 }
 
+.overview-dates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.date-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+}
+
+.date-label {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.date-value {
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+}
+
+/* Ensure GPS coordinates link is right-aligned */
+#gpsCoordinates {
+  margin-left: auto;
+}
+
+#gpsCoordinates a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+#gpsCoordinates a:hover {
+  text-decoration: underline;
+}
+
 /* ========================================
    PROVENANCE TIMELINE
    ======================================== */
@@ -1223,7 +1264,9 @@ body {
 
 .creator-social {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: baseline;
   gap: var(--space-2);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--color-border-light);
@@ -1232,26 +1275,98 @@ body {
 .social-links {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .social-link {
   display: inline-flex;
   align-items: center;
-  padding: var(--space-1) var(--space-3);
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-sm);
-  font-size: 0.6875rem;
-  font-weight: 500;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
   color: var(--color-text-secondary);
   text-decoration: none;
-  text-transform: capitalize;
   transition: all 0.15s ease;
+  border: none;
+}
+
+.social-link svg {
+  width: 21px;
+  height: 21px;
 }
 
 .social-link:hover {
   background: var(--color-bg-tertiary);
   color: var(--color-text-primary);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+/* Platform-specific hover colors */
+.social-link.instagram:hover {
+  color: #E1306C;
+  border-color: #E1306C;
+}
+
+.social-link.twitter:hover,
+.social-link.x:hover {
+  color: #000000;
+  border-color: #000000;
+}
+
+.social-link.linkedin:hover {
+  color: #0077B5;
+  border-color: #0077B5;
+}
+
+.social-link.facebook:hover {
+  color: #1877F2;
+  border-color: #1877F2;
+}
+
+.social-link.youtube:hover {
+  color: #FF0000;
+  border-color: #FF0000;
+}
+
+.social-link.github:hover {
+  color: #333333;
+  border-color: #333333;
+}
+
+.social-link.behance:hover {
+  color: #1769FF;
+  border-color: #1769FF;
+}
+
+.social-link.dribbble:hover {
+  color: #EA4C89;
+  border-color: #EA4C89;
+}
+
+.social-link.tiktok:hover {
+  color: #000000;
+  border-color: #000000;
+}
+
+.social-link.flickr:hover {
+  color: #0063DC;
+  border-color: #0063DC;
+}
+
+.social-link.unsplash:hover {
+  color: #000000;
+  border-color: #000000;
+}
+
+.social-link.website:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 /* ========================================
