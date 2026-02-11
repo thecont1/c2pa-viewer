@@ -233,7 +233,11 @@ function renderPhotographyMetadata(metadata) {
     setFullText('focalLength', photography.focal_length || 'Unknown');
     setFullText('dateOriginal', photography.date_original || 'Unknown');
     setFullText('dateDigitized', photography.date_digitized || 'Unknown');
-    setFullText('artist', photography.artist || 'Unknown');
+    // Handle case where artist might be an object or array
+    const artistValue = typeof photography.artist === 'string' ? photography.artist : 
+                       Array.isArray(photography.artist) ? photography.artist.join(', ') : 
+                       'Unknown';
+    setFullText('artist', artistValue);
     setFullText('colorSpace', photography.color_space || 'Unknown');
     setFullText('colorProfile', photography.color_profile || 'Unknown');
 }
@@ -372,7 +376,8 @@ async function loadC2PAMetadataFromApi(uri) {
         return {
             provenance: data.provenance,
             thumbnails: data.thumbnails || {},
-            digital_source_type: data.digital_source_type || null
+            digital_source_type: data.digital_source_type || null,
+            author_info: data.author_info || null
         };
     } catch (error) {
         console.error('Error loading C2PA metadata:', error);
@@ -625,10 +630,12 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
 function renderAuthorInfo(authorInfo) {
     // Update Artist field with C2PA author name if available
     const artistField = document.getElementById('artist');
-    if (authorInfo.author && artistField) {
+    // Check multiple possible author name fields: name, author, identifier
+    const authorName = authorInfo.name || authorInfo.author || authorInfo.identifier;
+    if (authorName && typeof authorName === 'string' && authorName.trim() && artistField) {
         // If EXIF artist is empty or 'Unknown', use C2PA author
         if (!artistField.textContent || artistField.textContent === 'Unknown') {
-            artistField.textContent = authorInfo.author;
+            artistField.textContent = authorName.trim();
         }
     }
     
@@ -686,19 +693,23 @@ function renderAuthorInfo(authorInfo) {
     const socialContainer = document.getElementById('authorSocial');
     const socialLinks = document.getElementById('socialLinks');
     
-    // Collect all social links from various possible fields
-    let allSocialLinks = [];
+    // Collect all social links from various possible fields (avoid duplicates)
+    const allSocialLinks = new Set();
     
     // Add links from sameAs array
     if (authorInfo.sameAs && Array.isArray(authorInfo.sameAs)) {
-        allSocialLinks = allSocialLinks.concat(authorInfo.sameAs);
+        authorInfo.sameAs.forEach(url => {
+            if (typeof url === 'string' && url.trim()) {
+                allSocialLinks.add(url.trim());
+            }
+        });
     }
     
     // Add links from social_links object (new format with instagram, twitter, linkedin keys)
     if (authorInfo.social_links && typeof authorInfo.social_links === 'object') {
         Object.entries(authorInfo.social_links).forEach(([platform, url]) => {
-            if (url && typeof url === 'string' && !allSocialLinks.includes(url)) {
-                allSocialLinks.push(url);
+            if (url && typeof url === 'string' && url.trim()) {
+                allSocialLinks.add(url.trim());
             }
         });
     }
@@ -708,35 +719,38 @@ function renderAuthorInfo(authorInfo) {
         const urlLower = authorInfo.url.toLowerCase();
         // Only add if it's a social media URL (not just a personal website)
         if ((urlLower.includes('instagram') || urlLower.includes('twitter') || 
-             urlLower.includes('linkedin') || urlLower.includes('facebook')) && 
-            !allSocialLinks.includes(authorInfo.url)) {
-            allSocialLinks.push(authorInfo.url);
+             urlLower.includes('linkedin') || urlLower.includes('facebook'))) {
+            allSocialLinks.add(authorInfo.url.trim());
         }
     }
     
     // Check 'url' array if it exists
     if (authorInfo.url && Array.isArray(authorInfo.url)) {
         authorInfo.url.forEach(url => {
-            if (typeof url === 'string' && !allSocialLinks.includes(url)) {
+            if (typeof url === 'string' && url.trim()) {
                 const urlLower = url.toLowerCase();
                 if (urlLower.includes('instagram') || urlLower.includes('twitter') || 
                     urlLower.includes('linkedin') || urlLower.includes('facebook')) {
-                    allSocialLinks.push(url);
+                    allSocialLinks.add(url.trim());
                 }
             }
         });
     }
     
-    if (allSocialLinks.length > 0 && socialContainer && socialLinks) {
-        let socialHtml = '';
-        allSocialLinks.forEach(url => {
-            const platform = getSocialPlatform(url);
-            socialHtml += `<a href="${url}" target="_blank" rel="noopener" class="social-link ${platform}" title="${platform}">${getSocialIcon(platform)}</a>`;
-        });
-        socialLinks.innerHTML = socialHtml;
-        socialContainer.style.display = 'block';
-    } else if (socialContainer) {
-        socialContainer.style.display = 'none';
+    // Show social media container only if we have social links
+    if (socialContainer && socialLinks) {
+        if (allSocialLinks.size > 0) {
+            let socialHtml = '';
+            allSocialLinks.forEach(url => {
+                const platform = getSocialPlatform(url);
+                socialHtml += `<a href="${url}" target="_blank" rel="noopener" class="social-link ${platform}" title="${platform}">${getSocialIcon(platform)}</a>`;
+            });
+            socialLinks.innerHTML = socialHtml;
+            socialContainer.style.display = 'flex';
+        } else {
+            socialLinks.innerHTML = '';
+            socialContainer.style.display = 'none';
+        }
     }
 }
 
@@ -984,6 +998,11 @@ async function uploadImageFile(file) {
             renderC2PAMetadata(null, false);
         }
         
+        // Render author info from C2PA data if available
+        if (metadata.author_info) {
+            renderAuthorInfo(metadata.author_info);
+        }
+        
         // Update digital source type badge
         updateDigitalSourceType(metadata.digital_source_type);
         
@@ -1095,7 +1114,11 @@ async function init() {
         
         if (metadata) {
             const mainImage = document.getElementById('mainImage');
-            mainImage.src = params.imageUri;
+            if (metadata.image_data) {
+                mainImage.src = metadata.image_data;
+            } else {
+                mainImage.src = params.imageUri;
+            }
             mainImage.style.display = 'block';
             
             // Hide the welcome zone completely when image loads

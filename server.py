@@ -800,7 +800,8 @@ def format_provenance_for_web(c2pa_data):
                     'telephone': author.get('telephone'),
                     'address': author.get('address'),
                     'jobTitle': author.get('jobTitle'),
-                    'worksFor': author.get('worksFor', {}).get('name') if isinstance(author.get('worksFor'), dict) else author.get('worksFor')
+                    'worksFor': author.get('worksFor', {}).get('name') if isinstance(author.get('worksFor'), dict) else author.get('worksFor'),
+                    'social_links': author_info.get('social_links', {})
                 }
                 provenance.append({
                     'name': 'Author',
@@ -861,9 +862,17 @@ def format_photography_metadata(exif_data):
     if 'FNumber' in exif:
         f_num = exif['FNumber']
         if isinstance(f_num, (int, float)):
-            aperture = f"f/{f_num:.1f}"
+            # Remove trailing zeros (e.g., 8.0 -> 8, 8.5 -> 8.5)
+            formatted = f"{f_num:.1f}"
+            if '.' in formatted:
+                formatted = formatted.rstrip('0').rstrip('.')
+            aperture = f"f/{formatted}"
         elif isinstance(f_num, tuple):
-            aperture = f"f/{f_num[0] / f_num[1]:.1f}"
+            f_value = f_num[0] / f_num[1]
+            formatted = f"{f_value:.1f}"
+            if '.' in formatted:
+                formatted = formatted.rstrip('0').rstrip('.')
+            aperture = f"f/{formatted}"
     
     # Format shutter speed
     shutter_speed = 'Unknown'
@@ -886,10 +895,17 @@ def format_photography_metadata(exif_data):
         fl = exif['FocalLength']
         if isinstance(fl, (int, float)):
             # Remove trailing zeros (e.g., 6.00 -> 6, 6.59 -> 6.59)
-            focal_length = f"{fl:.2f}mm".rstrip('0').rstrip('.')
+            formatted = f"{fl:.2f}"
+            # Remove trailing zeros after decimal point
+            if '.' in formatted:
+                formatted = formatted.rstrip('0').rstrip('.')
+            focal_length = f"{formatted}mm"
         elif isinstance(fl, tuple):
             fl_value = fl[0] / fl[1]
-            focal_length = f"{fl_value:.2f}mm".rstrip('0').rstrip('.')
+            formatted = f"{fl_value:.2f}"
+            if '.' in formatted:
+                formatted = formatted.rstrip('0').rstrip('.')
+            focal_length = f"{formatted}mm"
     
     # Format ISO - ensure it's displayed as integer
     iso = exif.get('ISOSpeedRatings', 'Unknown')
@@ -1005,6 +1021,12 @@ async def get_exif_metadata(uri: str = Query(..., description="Image file path o
                     'longitude': str(gps_data['longitude_decimal'])
                 }
             
+            # Note: We don't include base64 image data here because:
+            # 1. The client already has the image URI and can display it directly
+            # 2. Base64 encoding bloats the response by 10-100x (MB vs KB for metadata)
+            # 3. This endpoint is for lightweight metadata extraction only
+            # The /api/upload endpoint includes image_data since uploaded files have no URI
+                
             response = {
                 display_name: {
                     'filename': display_name,
@@ -1265,6 +1287,10 @@ async def upload_image(file: UploadFile = File(...)):
         # Include digital source type
         digital_source_type = c2pa_data.get('digital_source_type') if c2pa_data else None
         response[display_name]['digital_source_type'] = digital_source_type
+        
+        # Include author info
+        if c2pa_data:
+            response[display_name]['author_info'] = c2pa_data.get('author_info', {})
         
         # Create a data URL for the main image
         with open(temp_file_path, 'rb') as f:
