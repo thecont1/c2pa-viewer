@@ -688,6 +688,8 @@ def extract_exif_metadata(image_path: str):
             33432: 'Copyright',
             36867: 'DateTimeOriginal',
             36868: 'DateTimeDigitized',
+            270: 'ImageDescription',
+            37510: 'UserComment',
             37378: 'ApertureValue',
             37383: 'MeteringMode',
             37385: 'Flash',
@@ -850,8 +852,15 @@ def format_provenance_for_web(c2pa_data):
     return provenance
 
 
-def format_photography_metadata(exif_data):
-    """Format EXIF data for photography metadata section."""
+def format_photography_metadata(exif_data, iptc_data=None):
+    """Format EXIF data for photography metadata section.
+
+    If the EXIF ImageDescription is missing, fall back to the IPTC title
+    or description (the conventional photographer-entered caption field).
+    The IPTC fallback only applies when the IPTC value is non-empty AND
+    not the API's own placeholder string (which it shouldn't be — the
+    placeholder is only inserted into the photography description field).
+    """
     if not exif_data:
         return {}
     
@@ -937,7 +946,12 @@ def format_photography_metadata(exif_data):
         'date_original': format_datetime_full(exif.get('DateTimeOriginal', 'Unknown')),
         'date_digitized': format_datetime_full(exif.get('DateTimeDigitized', 'Unknown')),
         'artist': exif.get('Artist', 'Unknown'),
-        'description': exif.get('ImageDescription', 'No description available'),
+        'description': (
+            exif.get('ImageDescription')
+            or (iptc_data or {}).get('description')
+            or (iptc_data or {}).get('title')
+            or 'No description available'
+        ),
         'color_space': color_space,
         'color_profile': color_profile,
     }
@@ -1006,7 +1020,7 @@ async def get_exif_metadata(uri: str = Query(..., description="Image file path o
             iptc_data = extract_iptc_data(image_path)
             
             # Format for web viewer
-            photography = format_photography_metadata(exif_data)
+            photography = format_photography_metadata(exif_data, iptc_data)
             
             # Use original filename from URI for display
             display_name = Path(uri).name
@@ -1246,7 +1260,7 @@ async def upload_image(file: UploadFile = File(...)):
         iptc_data = extract_iptc_data(temp_file_path)
         
         # Format for web viewer
-        photography = format_photography_metadata(exif_data)
+        photography = format_photography_metadata(exif_data, iptc_data)
         
         # Use original filename for display
         display_name = file.filename or 'unknown.jpg'
