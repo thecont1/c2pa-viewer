@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for c2pa-viewer-hvue4w on 2026-02-05T00:14:51Z
+# fly.toml app configuration file generated for c2pa-viewer-hvue4w on 2026-07-02T10:52:42Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
@@ -21,3 +21,11 @@ primary_region = 'bom'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 256
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
+  processes = ['app']
+  size = 'shared-cpu-1x'
