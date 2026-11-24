@@ -17,6 +17,7 @@ Downloaded from <https://github.com/contentauth/c2pa-python> `tests/fixtures/` (
 
 | File | How made | Expected result |
 |---|---|---|
+| `gps.jpg` | `A.jpg` + GPS IFD injected with `scripts/make-gps-fixture.mjs` (lat 12.9716 N, lon 77.5946 E — Bengaluru) | No C2PA manifest; `exif.gps` carries decimal lat/lon. Exists for API `strip_gps` contract testing |
 | `tampered.jpg` | `C.jpg` with one byte XOR `0xFF` at offset `len-2000` (inside entropy-coded image data, before EOI) | Hard-binding failure — `validation_state` should report invalid/tampered |
 | `big/pad-5mb.jpg` | `C.jpg` + zero bytes appended after EOI to 5 MiB | Will not validate (trailing garbage); exists only to measure read memory/time. **Not committed** (gitignored) |
 | `big/pad-15mb.jpg` | same, 15 MiB | same |
