@@ -26,13 +26,21 @@ const DIGITAL_SOURCE_TYPE_LABELS = {
     'dataDrivenMedia': 'Data-Driven Media',
 };
 
+// exifr's output names differ from the EXIF tag names server.py used;
+// EXIF_ALIASES maps them back so response shapes stay identical.
 const EXIF_TAGS = [
-    'Make', 'Model', 'XResolution', 'YResolution', 'Software', 'DateTime',
-    'Artist', 'Copyright', 'DateTimeOriginal', 'DateTimeDigitized',
+    'Make', 'Model', 'XResolution', 'YResolution', 'Software', 'ModifyDate',
+    'Artist', 'Copyright', 'DateTimeOriginal', 'CreateDate',
     'ImageDescription', 'UserComment', 'ApertureValue', 'MeteringMode',
     'Flash', 'FocalLength', 'ColorSpace', 'SensingMethod', 'ExposureMode',
-    'WhiteBalance', 'ISOSpeedRatings', 'FNumber', 'ExposureTime', 'LensModel',
+    'WhiteBalance', 'ISO', 'FNumber', 'ExposureTime', 'LensModel',
 ];
+
+const EXIF_ALIASES = {
+    ISO: 'ISOSpeedRatings',
+    CreateDate: 'DateTimeDigitized',
+    ModifyDate: 'DateTime',
+};
 
 const IPTC_MAP = {
     title: 'ObjectName',
@@ -153,8 +161,13 @@ async function imageDimensions(bytes, mime) {
 let _c2paPromise = null;
 function getC2pa() {
     if (!_c2paPromise) {
+        // Clear the cache on rejection so a transient init failure doesn't
+        // poison every subsequent call; success stays cached for sharing.
         _c2paPromise = createC2pa({
             wasmSrc: new URL('vendor/c2pa_bg.wasm', document.baseURI).href,
+        }).catch((err) => {
+            _c2paPromise = null;
+            throw err;
         });
     }
     return _c2paPromise;
@@ -512,9 +525,13 @@ async function extractExif(arrayBuffer, filename, format, fileSizeBytes) {
     let parsed;
     try {
         parsed = await exifrParse(arrayBuffer, {
-            exif: true, gps: true, ifd1: true, interop: true,
+            // translateValues off for the EXIF IFD only: script.js looks up
+            // ExposureMode/MeteringMode/Flash/WhiteBalance by numeric code,
+            // while every other segment keeps translated values.
+            exif: { translateValues: false },
+            gps: true, ifd1: true, interop: true,
             makerNote: false, userComment: true, xmp: false,
-            iptc: true, icc: false, jfif: false, ihdr: false,
+            iptc: true, icc: true, jfif: false, ihdr: false,
             translateValues: true, reviveValues: true, sanitize: true,
         });
     } catch (e) {
@@ -525,8 +542,13 @@ async function extractExif(arrayBuffer, filename, format, fileSizeBytes) {
 
     for (const tag of EXIF_TAGS) {
         if (parsed[tag] !== undefined) {
-            result.exif[tag] = convertExifValue(parsed[tag]);
+            result.exif[EXIF_ALIASES[tag] || tag] = convertExifValue(parsed[tag]);
         }
+    }
+
+    // ICC profile description (e.g. "sRGB IEC61966-2.1") when embedded.
+    if (parsed.ProfileDescription) {
+        result.color_profile = String(parsed.ProfileDescription);
     }
 
     // GPS: exifr already yields decimal degrees with hemisphere applied.
