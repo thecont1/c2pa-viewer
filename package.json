@@ -11,7 +11,9 @@
     "test:openapi": "bun scripts/openapi-check.mjs",
     "test:parity": "bun scripts/parity.mjs",
     "test": "bun scripts/golden.mjs --check && bun run test:parity && bun run test:openapi",
-    "test:api": "bun scripts/smoke-api.mjs"
+    "test:api": "bun scripts/smoke-api.mjs",
+    "test:contract": "bun scripts/contract-test.mjs",
+    "test:load": "bun scripts/loadtest.mjs"
   },
   "dependencies": {
     "@contentauth/c2pa-web": "^0.14.3",
@@ -25,6 +27,6 @@
     "ajv-formats": "3.0.1",
     "piexifjs": "1.0.6",
     "playwright": "1.61.0",
-    "wrangler": "^4.95.0"
+    "wrangler": "4.168.0"
   }
 }

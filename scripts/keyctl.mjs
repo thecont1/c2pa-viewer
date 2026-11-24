@@ -1,16 +1,16 @@
 #!/usr/bin/env bun
-// keyctl — API key admin CLI for c2pa-verify-api (LOCAL-ONLY in this phase).
+// keyctl — API key admin CLI for c2pa-verify-api.
 //
 //   bun scripts/keyctl.mjs create --name X [--type server|browser]
 //        [--tier free|pro|scale] [--quota N] [--origins a,b]
-//        [--scopes verify,mini] [--test]
-//   bun scripts/keyctl.mjs list
-//   bun scripts/keyctl.mjs revoke --id <uuid>
-//   bun scripts/keyctl.mjs rotate --id <uuid>
+//        [--scopes verify,mini] [--test] [--remote]
+//   bun scripts/keyctl.mjs list [--remote]
+//   bun scripts/keyctl.mjs revoke --id <uuid> [--remote]
+//   bun scripts/keyctl.mjs rotate --id <uuid> [--remote]
 //
-// All commands run `wrangler d1 execute --local` against the local dev
-// database (api/.wrangler/state). --remote is accepted for forward
-// compatibility but errors out: remote is not enabled in this phase.
+// Commands run `wrangler d1 execute --local` by default against the local dev
+// database (api/.wrangler/state). Pass --remote to operate on the real D1
+// database configured in api/wrangler.jsonc.
 //
 // create/rotate print the full plaintext key ONCE — it is never stored
 // (only sha256 hex) and cannot be recovered.
@@ -51,8 +51,8 @@ function die(msg, code = 1) {
 
 // --------------------------------------------------------------- d1 shell --
 
-function d1(sql, { json = false } = {}) {
-    const args = ['wrangler', 'd1', 'execute', DB_NAME, '--local', '--command', sql];
+function d1(sql, { json = false, remote = false } = {}) {
+    const args = ['wrangler', 'd1', 'execute', DB_NAME, remote ? '--remote' : '--local', '--command', sql];
     if (json) args.push('--json');
     const res = spawnSync('bunx', args, { cwd: API_DIR, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
     if (res.error) throw res.error;
@@ -66,8 +66,8 @@ function d1(sql, { json = false } = {}) {
     return res.stdout;
 }
 
-function d1Query(sql) {
-    const out = d1(sql, { json: true });
+function d1Query(sql, { remote = false } = {}) {
+    const out = d1(sql, { json: true, remote });
     return (out[0] && out[0].results) || [];
 }
 
@@ -112,7 +112,7 @@ async function create(args) {
 
     const sql = `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, created_at)
 VALUES (${q(id)}, ${q(hash)}, ${q(displayPrefix)}, ${q(name)}, ${q(type)}, ${q(tier)}, ${scopes ? q(scopes) : "'[\"verify\"]'"}, ${quota === null ? 'NULL' : quota}, ${q(origins)}, ${q(now)});`;
-    d1(sql);
+    d1(sql, { remote: !!args.remote });
 
     console.log('key created');
     console.log(`  id:             ${id}`);
@@ -130,9 +130,10 @@ VALUES (${q(id)}, ${q(hash)}, ${q(displayPrefix)}, ${q(name)}, ${q(type)}, ${q(t
     console.log(`KEY_ID=${id}`);
 }
 
-function list() {
+function list(args = {}) {
     const rows = d1Query(
-        'SELECT id, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, created_at, rotated_at, revoked_at FROM keys ORDER BY created_at'
+        'SELECT id, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, created_at, rotated_at, revoked_at FROM keys ORDER BY created_at',
+        { remote: !!args.remote }
     );
     if (!rows.length) {
         console.log('no keys');
@@ -146,24 +147,24 @@ function list() {
 
 function revoke(args) {
     if (!args.id) die('revoke requires --id');
-    const rows = d1Query(`SELECT id, revoked_at FROM keys WHERE id = ${q(args.id)}`);
+    const rows = d1Query(`SELECT id, revoked_at FROM keys WHERE id = ${q(args.id)}`, { remote: !!args.remote });
     if (!rows.length) die(`no key with id ${args.id}`);
     if (rows[0].revoked_at) die(`key ${args.id} is already revoked`);
     const now = new Date().toISOString();
-    d1(`UPDATE keys SET revoked_at = ${q(now)} WHERE id = ${q(args.id)};`);
+    d1(`UPDATE keys SET revoked_at = ${q(now)} WHERE id = ${q(args.id)};`, { remote: !!args.remote });
     console.log(`revoked ${args.id} at ${now}`);
 }
 
 async function rotate(args) {
     if (!args.id) die('rotate requires --id');
-    const rows = d1Query(`SELECT id, display_prefix, revoked_at FROM keys WHERE id = ${q(args.id)}`);
+    const rows = d1Query(`SELECT id, display_prefix, revoked_at FROM keys WHERE id = ${q(args.id)}`, { remote: !!args.remote });
     if (!rows.length) die(`no key with id ${args.id}`);
     if (rows[0].revoked_at) die(`key ${args.id} is revoked — rotating a revoked key is not allowed`);
     const kind = rows[0].display_prefix.startsWith('c2pa_test_') ? 'test' : 'live';
     const { plaintext, displayPrefix } = generateKey(kind);
     const hash = await sha256HexText(plaintext);
     const now = new Date().toISOString();
-    d1(`UPDATE keys SET key_hash = ${q(hash)}, display_prefix = ${q(displayPrefix)}, rotated_at = ${q(now)} WHERE id = ${q(args.id)};`);
+    d1(`UPDATE keys SET key_hash = ${q(hash)}, display_prefix = ${q(displayPrefix)}, rotated_at = ${q(now)} WHERE id = ${q(args.id)};`, { remote: !!args.remote });
     console.log(`rotated ${args.id} at ${now}`);
     console.log('');
     console.log(`  NEW PLAINTEXT KEY (shown once, never stored): ${plaintext}`);
@@ -176,11 +177,10 @@ async function rotate(args) {
 
 async function main() {
     const args = parseArgs(process.argv.slice(2));
-    if (args.remote) die('remote not enabled in this phase');
     const cmd = args._[0];
     switch (cmd) {
         case 'create': return create(args);
-        case 'list': return list();
+        case 'list': return list(args);
         case 'revoke': return revoke(args);
         case 'rotate': return rotate(args);
         default:
