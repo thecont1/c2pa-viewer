@@ -16,8 +16,32 @@ const FETCH_TIMEOUT_MS = 30000;
 // octet-stream so HTML/SVG/scriptable content can't execute same-origin.
 const SAFE_IMAGE_TYPE = /^image\/(jpeg|jpg|png|webp|gif|tiff?|bmp|avif)$/i;
 
-// Basic SSRF guard: refuse loopback, private and link-local targets.
-const BLOCKED_HOST = /^(localhost|.*\.localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?|metadata\.google\.internal|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/i;
+// Basic SSRF guard. Private-range checks apply only to IP literals —
+// DNS names like 10.images.example.org must not match.
+function isBlockedHost(hostname) {
+    const h = hostname.toLowerCase().replace(/\.$/, '');
+    if (h === 'localhost' || h.endsWith('.localhost')) return true;
+    if (h === 'metadata.google.internal') return true;
+
+    // IPv4 literal (URL parser has already normalized exotic forms like
+    // 0x7f000001 or 2130706433 into dotted quads)
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
+        const [a, b] = h.split('.').map(Number);
+        return a === 0 || a === 10 || a === 127 ||
+            (a === 172 && b >= 16 && b <= 31) ||
+            (a === 192 && b === 168) ||
+            (a === 169 && b === 254) ||
+            (a === 100 && b >= 64 && b <= 127);
+    }
+
+    // IPv6 literals (hostname keeps its brackets): loopback, unspecified,
+    // link-local, ULA, and IPv4-mapped addresses
+    if (h.startsWith('[')) {
+        return h === '[::1]' || h === '[::]' || h.startsWith('[::ffff:') ||
+            h.startsWith('[fe80') || h.startsWith('[fc') || h.startsWith('[fd');
+    }
+    return false;
+}
 
 function json(data, status) {
     return new Response(JSON.stringify(data), {
@@ -42,7 +66,7 @@ export async function onRequestGet(context) {
     if (upstream.protocol !== 'http:' && upstream.protocol !== 'https:') {
         return json({ error: 'only http(s) urls are allowed' }, 400);
     }
-    if (BLOCKED_HOST.test(upstream.hostname)) {
+    if (isBlockedHost(upstream.hostname)) {
         return json({ error: 'host not allowed' }, 403);
     }
 
