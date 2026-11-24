@@ -138,10 +138,55 @@ export function emptyC2paResult() {
     };
 }
 
-// Read + extract the full c2pa result for one asset. `settings` is passed
-// through to engine.read when no trust anchors are given; `trust.anchors`
-// switches to the trust-profile reads and adds a `trust` key to the result.
-export async function buildC2paResult({ bytes, mime, engine, settings = null, trust = null }) {
+// Normalize one validation_results entry to the public Code shape
+// {code, explanation, url?} — url is omitted when absent.
+function cleanCode(entry) {
+    const out = {
+        code: entry && entry.code !== undefined ? entry.code : null,
+        explanation: entry && entry.explanation !== undefined ? entry.explanation : null,
+    };
+    if (entry && entry.url) out.url = entry.url;
+    return out;
+}
+
+// Manifest-store validation detail -> { state, results }.
+// results buckets come from store.validation_results.activeManifest verbatim;
+// any code present in the flat store.validation_status list but missing from
+// all buckets is appended to `failure` (validation_status only carries
+// problem-level codes — verified against the fixture corpus).
+export function extractValidation(store) {
+    if (!store) return null;
+    const vr = (store.validation_results && store.validation_results.activeManifest) || {};
+    const results = {
+        success: (vr.success || []).map(cleanCode),
+        informational: (vr.informational || []).map(cleanCode),
+        failure: (vr.failure || []).map(cleanCode),
+    };
+    const seen = new Set(
+        [...results.success, ...results.informational, ...results.failure]
+            .map((e) => `${e.code}${e.url || ''}`)
+    );
+    for (const st of store.validation_status || []) {
+        if (!st || st.code === undefined || st.code === null) continue;
+        const key = `${st.code}${st.url || ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        results.failure.push(cleanCode(st));
+    }
+    return {
+        state: store.validation_state ?? null,
+        results,
+    };
+}
+
+// Read + extract everything analyzeBytes needs for one asset in a single
+// pass. Returns { result, validation, manifestLabel }:
+//   result        — the c2paMetadata-shaped object (may be the empty shape)
+//   validation    — extractValidation(store), null when no manifest
+//   manifestLabel — store.active_manifest, null when no manifest
+// `settings` is passed through to engine.read when no trust anchors are
+// given; `trust.anchors` switches to the trust-profile reads.
+export async function readC2paAsset({ bytes, mime, engine, settings = null, trust = null }) {
     const anchors = trust && trust.anchors ? trust.anchors : null;
 
     let handle;
@@ -157,23 +202,26 @@ export async function buildC2paResult({ bytes, mime, engine, settings = null, tr
     if (!handle) {
         const empty = emptyC2paResult();
         if (anchors) empty.trust = trustInfo;
-        return empty;
+        return { result: empty, validation: null, manifestLabel: null };
     }
 
     const { store, resourceToBytes, dispose } = handle;
     try {
+        const manifestLabel = store && store.active_manifest ? store.active_manifest : null;
+        const validation = extractValidation(store);
+
         const manifest = activeManifest(store);
         if (!manifest) {
             const empty = emptyC2paResult();
             if (anchors) empty.trust = trustInfo;
-            return empty;
+            return { result: empty, validation, manifestLabel };
         }
 
         const c2paData = extractManifestData(store);
         if (!c2paData) {
             const empty = emptyC2paResult();
             if (anchors) empty.trust = trustInfo;
-            return empty;
+            return { result: empty, validation, manifestLabel };
         }
 
         const thumbnails = await extractThumbnails(manifest, resourceToBytes);
@@ -199,12 +247,20 @@ export async function buildC2paResult({ bytes, mime, engine, settings = null, tr
                 );
             }
         }
-        return result;
+        return { result, validation, manifestLabel };
     } finally {
         if (dispose) {
             try { await dispose(); } catch { }
         }
     }
+}
+
+// Read + extract the full c2pa result for one asset. `settings` is passed
+// through to engine.read when no trust anchors are given; `trust.anchors`
+// switches to the trust-profile reads and adds a `trust` key to the result.
+export async function buildC2paResult(args) {
+    const { result } = await readC2paAsset(args);
+    return result;
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 // Cloudflare Worker c2pa-wasm adapter, ...).
 
 export { analyzeBytes, buildExifEntry } from './analyze.js';
+export { toApiResult, sha256Hex } from './api-result.js';
 export { detectFormat, imageMime } from './detect.js';
 export { bytesDimensions } from './dimensions.js';
 export {

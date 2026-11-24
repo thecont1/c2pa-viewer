@@ -7,7 +7,10 @@
     "build:compute": "bun build src/compute.js --outfile=c2pa-compute.js --format=iife --global-name=C2paApi --minify",
     "build": "bun run build:compute && mkdir -p vendor vendor/trust && cp node_modules/@contentauth/c2pa-web/dist/resources/c2pa_bg.wasm vendor/c2pa_bg.wasm && cp trust/C2PA-TRUST-LIST.pem trust/ITL-anchors.pem trust/store.cfg trust/meta.json vendor/trust/",
     "stage": "bash scripts/stage-site.sh",
-    "deploy": "bun run build && bun run stage && wrangler pages deploy .deploy-stage --project-name=c2pa-viewer"
+    "deploy": "bun run build && bun run stage && wrangler pages deploy .deploy-stage --project-name=c2pa-viewer",
+    "test:openapi": "bun scripts/openapi-check.mjs",
+    "test:parity": "bun scripts/parity.mjs",
+    "test": "bun scripts/golden.mjs --check && bun run test:parity && bun run test:openapi"
   },
   "dependencies": {
     "@contentauth/c2pa-web": "^0.14.3",
@@ -15,7 +18,10 @@
   },
   "devDependencies": {
     "@contentauth/c2pa-wasm": "0.11.6",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "playwright": "1.61.0",
-    "wrangler": "^4.95.0"
+    "wrangler": "^4.95.0",
+    "yaml": "2.9.1"
   }
 }

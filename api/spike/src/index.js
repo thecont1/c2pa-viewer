@@ -1,5 +1,5 @@
 import { WasmReader } from '@contentauth/c2pa-wasm';
-import { analyzeBytes } from '../../../packages/core/src/index.js';
+import { analyzeBytes, toApiResult } from '../../../packages/core/src/index.js';
 import { wasmEngine, ensureInit, makeBlob, errMessage, manifestCount } from './engine-wasm.js';
 
 // Trust lists are bundled as text modules (wrangler `rules`, see wrangler.jsonc).
@@ -14,6 +14,8 @@ const TRUST_ANCHORS = {
   config: trustConfig,
   meta: trustMeta,
 };
+
+const ENGINE_INFO = { name: 'c2pa-wasm', version: '0.11.6' };
 
 export default {
   async fetch(request, env, ctx) {
@@ -41,6 +43,41 @@ export default {
           include: { exif: true, c2pa: true },
         });
         return Response.json({ ...c2pa, exif });
+      } catch (e) {
+        return Response.json({ ok: false, error: errMessage(e) }, { status: 500 });
+      }
+    }
+
+    // Public-API-shaped result: runs analyzeBytes then maps through
+    // toApiResult. Test harness for the /v1 contract — same wire input as
+    // /verify (raw body + x-mime/x-filename) plus query options:
+    //   ?include=exif,iptc,gps,thumbnails,raw_manifest  (default exif,iptc)
+    //   ?strip_gps=false
+    //   ?trust=c2pa|c2pa_and_itl  (accepted; resolution always distinguishes
+    //     both lists so `basis` is reported — see trust.js)
+    if (url.pathname === '/v1-verify' && request.method === 'POST') {
+      const mime = request.headers.get('x-mime') || 'image/jpeg';
+      const filename = request.headers.get('x-filename') || 'image';
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      const include = (url.searchParams.get('include') || 'exif,iptc')
+        .split(',').map((s) => s.trim()).filter(Boolean);
+      const stripGps = url.searchParams.get('strip_gps') !== 'false';
+      try {
+        const analysis = await analyzeBytes({
+          bytes,
+          mime,
+          filename,
+          contentType: mime,
+          engine: wasmEngine,
+          trust: { anchors: TRUST_ANCHORS },
+          include: { exif: true, c2pa: true },
+        });
+        return Response.json(toApiResult(analysis, {
+          id: `ver_${crypto.randomUUID()}`,
+          engine: ENGINE_INFO,
+          include,
+          strip_gps: stripGps,
+        }));
       } catch (e) {
         return Response.json({ ok: false, error: errMessage(e) }, { status: 500 });
       }
