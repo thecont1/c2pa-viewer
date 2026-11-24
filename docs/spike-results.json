@@ -1,0 +1,1073 @@
+{
+  "generated_at": "2026-11-24T21:01:05.572Z",
+  "protocol": {
+    "sample_ms": 25,
+    "fixtures": [
+      "A.jpg",
+      "C.jpg",
+      "C_with_CAWG_data.jpg",
+      "cloud.jpg",
+      "tampered.jpg",
+      "big/pad-5mb.jpg",
+      "big/pad-15mb.jpg",
+      "big/pad-25mb.jpg",
+      "big/pad-40mb.jpg"
+    ],
+    "pad_repeat": 3,
+    "runs": 2,
+    "note": "RSS = summed RSS of all workerd processes (ps -o rss=, KB->MB). Local workerd has no 128MB isolate limit."
+  },
+  "local": {
+    "runs": [
+      {
+        "run": 1,
+        "idle_rss_mb": 211.4,
+        "workerd_pids": [
+          80895,
+          80896
+        ],
+        "requests": [
+          {
+            "fixture": "A.jpg",
+            "cold_start": true,
+            "http_status": 200,
+            "wall_ms": 8.7,
+            "bytes": 61720,
+            "ok": true,
+            "validation_state": null,
+            "active_manifest": null,
+            "manifest_count": 0,
+            "init_ms": 1,
+            "read_ms": 4,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 211.4,
+              "peak_rss_mb": 216,
+              "peak_delta_mb": 4.6,
+              "post_rss_mb": 216,
+              "post_delta_mb": 4.6,
+              "samples": 2
+            }
+          },
+          {
+            "fixture": "C.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 63.5,
+            "bytes": 137886,
+            "ok": true,
+            "validation_state": "Valid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 1,
+            "read_ms": 60,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 216,
+              "peak_rss_mb": 227.5,
+              "peak_delta_mb": 11.5,
+              "post_rss_mb": 227.5,
+              "post_delta_mb": 11.5,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "C_with_CAWG_data.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 24.2,
+            "bytes": 139636,
+            "ok": true,
+            "validation_state": "Valid",
+            "active_manifest": "urn:c2pa:822f2ec0-ef27-4d95-88b4-74586c12873d",
+            "manifest_count": 1,
+            "init_ms": 1,
+            "read_ms": 20,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 227.5,
+              "peak_rss_mb": 231,
+              "peak_delta_mb": 3.5,
+              "post_rss_mb": 231,
+              "post_delta_mb": 3.5,
+              "samples": 2
+            }
+          },
+          {
+            "fixture": "cloud.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 80.1,
+            "bytes": 183901,
+            "ok": true,
+            "validation_state": "Valid",
+            "active_manifest": "adobe:urn:uuid:5f37e182-3687-462e-a7fb-573462780391",
+            "manifest_count": 1,
+            "init_ms": 1,
+            "read_ms": 77,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 231,
+              "peak_rss_mb": 235.9,
+              "peak_delta_mb": 4.9,
+              "post_rss_mb": 235.9,
+              "post_delta_mb": 4.9,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "tampered.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 13.8,
+            "bytes": 137886,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 1,
+            "read_ms": 10,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 235.9,
+              "peak_rss_mb": 236.2,
+              "peak_delta_mb": 0.3,
+              "post_rss_mb": 236.2,
+              "post_delta_mb": 0.3,
+              "samples": 2
+            }
+          },
+          {
+            "fixture": "big/pad-5mb.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 41.5,
+            "bytes": 5242880,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 1,
+            "read_ms": 30,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 236.2,
+              "peak_rss_mb": 266.6,
+              "peak_delta_mb": 30.4,
+              "post_rss_mb": 266.6,
+              "post_delta_mb": 30.4,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-15mb.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 99.3,
+            "bytes": 15728640,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 1,
+            "read_ms": 69,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 266.6,
+              "peak_rss_mb": 329.2,
+              "peak_delta_mb": 62.5,
+              "post_rss_mb": 329.2,
+              "post_delta_mb": 62.5,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-25mb.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 155.5,
+            "bytes": 26214400,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 1,
+            "read_ms": 108,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 329.2,
+              "peak_rss_mb": 419.8,
+              "peak_delta_mb": 90.6,
+              "post_rss_mb": 419.8,
+              "post_delta_mb": 90.6,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-40mb.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 249.8,
+            "bytes": 41943040,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 1,
+            "read_ms": 170,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 419.8,
+              "peak_rss_mb": 577.9,
+              "peak_delta_mb": 158,
+              "post_rss_mb": 577.9,
+              "post_delta_mb": 158,
+              "samples": 6
+            }
+          }
+        ],
+        "pad_repeats": [
+          {
+            "fixture": "big/pad-5mb.jpg",
+            "rep": 1,
+            "http_status": 200,
+            "wall_ms": 38.2,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 577.9,
+              "peak_rss_mb": 578.2,
+              "peak_delta_mb": 0.4,
+              "post_rss_mb": 578.2,
+              "post_delta_mb": 0.4,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-5mb.jpg",
+            "rep": 2,
+            "http_status": 200,
+            "wall_ms": 38.8,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 578.2,
+              "peak_rss_mb": 588.8,
+              "peak_delta_mb": 10.5,
+              "post_rss_mb": 588.8,
+              "post_delta_mb": 10.5,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-5mb.jpg",
+            "rep": 3,
+            "http_status": 200,
+            "wall_ms": 38.3,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 588.8,
+              "peak_rss_mb": 599.3,
+              "peak_delta_mb": 10.5,
+              "post_rss_mb": 599.3,
+              "post_delta_mb": 10.5,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-15mb.jpg",
+            "rep": 1,
+            "http_status": 200,
+            "wall_ms": 87.7,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 599.3,
+              "peak_rss_mb": 599.5,
+              "peak_delta_mb": 0.2,
+              "post_rss_mb": 599.5,
+              "post_delta_mb": 0.2,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-15mb.jpg",
+            "rep": 2,
+            "http_status": 200,
+            "wall_ms": 88.6,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 599.5,
+              "peak_rss_mb": 599.8,
+              "peak_delta_mb": 0.3,
+              "post_rss_mb": 599.8,
+              "post_delta_mb": 0.3,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-15mb.jpg",
+            "rep": 3,
+            "http_status": 200,
+            "wall_ms": 88,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 599.8,
+              "peak_rss_mb": 600,
+              "peak_delta_mb": 0.1,
+              "post_rss_mb": 600,
+              "post_delta_mb": 0.1,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-25mb.jpg",
+            "rep": 1,
+            "http_status": 200,
+            "wall_ms": 137.2,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 600,
+              "peak_rss_mb": 600.1,
+              "peak_delta_mb": 0.2,
+              "post_rss_mb": 600.1,
+              "post_delta_mb": 0.2,
+              "samples": 5
+            }
+          },
+          {
+            "fixture": "big/pad-25mb.jpg",
+            "rep": 2,
+            "http_status": 200,
+            "wall_ms": 139.5,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 600.1,
+              "peak_rss_mb": 600.2,
+              "peak_delta_mb": 0.1,
+              "post_rss_mb": 600.2,
+              "post_delta_mb": 0.1,
+              "samples": 5
+            }
+          },
+          {
+            "fixture": "big/pad-25mb.jpg",
+            "rep": 3,
+            "http_status": 200,
+            "wall_ms": 135.1,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 600.2,
+              "peak_rss_mb": 600.3,
+              "peak_delta_mb": 0.1,
+              "post_rss_mb": 600.3,
+              "post_delta_mb": 0.1,
+              "samples": 5
+            }
+          },
+          {
+            "fixture": "big/pad-40mb.jpg",
+            "rep": 1,
+            "http_status": 200,
+            "wall_ms": 232.2,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 600.3,
+              "peak_rss_mb": 683.2,
+              "peak_delta_mb": 82.8,
+              "post_rss_mb": 683.2,
+              "post_delta_mb": 82.8,
+              "samples": 6
+            }
+          },
+          {
+            "fixture": "big/pad-40mb.jpg",
+            "rep": 2,
+            "http_status": 200,
+            "wall_ms": 218.5,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 683.2,
+              "peak_rss_mb": 683.8,
+              "peak_delta_mb": 0.6,
+              "post_rss_mb": 683.8,
+              "post_delta_mb": 0.6,
+              "samples": 5
+            }
+          },
+          {
+            "fixture": "big/pad-40mb.jpg",
+            "rep": 3,
+            "http_status": 200,
+            "wall_ms": 217.8,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 683.8,
+              "peak_rss_mb": 684,
+              "peak_delta_mb": 0.2,
+              "post_rss_mb": 684,
+              "post_delta_mb": 0.2,
+              "samples": 6
+            }
+          }
+        ]
+      },
+      {
+        "run": 2,
+        "idle_rss_mb": 213.2,
+        "workerd_pids": [
+          81037,
+          81038
+        ],
+        "requests": [
+          {
+            "fixture": "A.jpg",
+            "cold_start": true,
+            "http_status": 200,
+            "wall_ms": 11.4,
+            "bytes": 61720,
+            "ok": true,
+            "validation_state": null,
+            "active_manifest": null,
+            "manifest_count": 0,
+            "init_ms": 2,
+            "read_ms": 5,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 213.2,
+              "peak_rss_mb": 218,
+              "peak_delta_mb": 4.7,
+              "post_rss_mb": 218,
+              "post_delta_mb": 4.7,
+              "samples": 2
+            }
+          },
+          {
+            "fixture": "C.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 62,
+            "bytes": 137886,
+            "ok": true,
+            "validation_state": "Valid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 2,
+            "read_ms": 59,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 218,
+              "peak_rss_mb": 229.4,
+              "peak_delta_mb": 11.4,
+              "post_rss_mb": 229.4,
+              "post_delta_mb": 11.4,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "C_with_CAWG_data.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 23.5,
+            "bytes": 139636,
+            "ok": true,
+            "validation_state": "Valid",
+            "active_manifest": "urn:c2pa:822f2ec0-ef27-4d95-88b4-74586c12873d",
+            "manifest_count": 1,
+            "init_ms": 2,
+            "read_ms": 20,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 229.4,
+              "peak_rss_mb": 232.7,
+              "peak_delta_mb": 3.3,
+              "post_rss_mb": 232.7,
+              "post_delta_mb": 3.3,
+              "samples": 2
+            }
+          },
+          {
+            "fixture": "cloud.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 74.9,
+            "bytes": 183901,
+            "ok": true,
+            "validation_state": "Valid",
+            "active_manifest": "adobe:urn:uuid:5f37e182-3687-462e-a7fb-573462780391",
+            "manifest_count": 1,
+            "init_ms": 2,
+            "read_ms": 71,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 232.7,
+              "peak_rss_mb": 237.5,
+              "peak_delta_mb": 4.8,
+              "post_rss_mb": 237.5,
+              "post_delta_mb": 4.8,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "tampered.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 13.5,
+            "bytes": 137886,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 2,
+            "read_ms": 10,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 237.5,
+              "peak_rss_mb": 238.1,
+              "peak_delta_mb": 0.6,
+              "post_rss_mb": 238.1,
+              "post_delta_mb": 0.6,
+              "samples": 2
+            }
+          },
+          {
+            "fixture": "big/pad-5mb.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 40.5,
+            "bytes": 5242880,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 2,
+            "read_ms": 29,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 238.1,
+              "peak_rss_mb": 267.5,
+              "peak_delta_mb": 29.4,
+              "post_rss_mb": 267.5,
+              "post_delta_mb": 29.4,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-15mb.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 93.2,
+            "bytes": 15728640,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 2,
+            "read_ms": 65,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 267.5,
+              "peak_rss_mb": 330.8,
+              "peak_delta_mb": 63.3,
+              "post_rss_mb": 330.8,
+              "post_delta_mb": 63.3,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-25mb.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 150.6,
+            "bytes": 26214400,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 2,
+            "read_ms": 105,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 330.8,
+              "peak_rss_mb": 421.6,
+              "peak_delta_mb": 90.8,
+              "post_rss_mb": 421.6,
+              "post_delta_mb": 90.8,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-40mb.jpg",
+            "cold_start": false,
+            "http_status": 200,
+            "wall_ms": 229.7,
+            "bytes": 41943040,
+            "ok": true,
+            "validation_state": "Invalid",
+            "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+            "manifest_count": 1,
+            "init_ms": 2,
+            "read_ms": 164,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 421.6,
+              "peak_rss_mb": 581.5,
+              "peak_delta_mb": 159.9,
+              "post_rss_mb": 581.5,
+              "post_delta_mb": 159.9,
+              "samples": 6
+            }
+          }
+        ],
+        "pad_repeats": [
+          {
+            "fixture": "big/pad-5mb.jpg",
+            "rep": 1,
+            "http_status": 200,
+            "wall_ms": 37.3,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 581.5,
+              "peak_rss_mb": 581.7,
+              "peak_delta_mb": 0.2,
+              "post_rss_mb": 581.7,
+              "post_delta_mb": 0.2,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-5mb.jpg",
+            "rep": 2,
+            "http_status": 200,
+            "wall_ms": 38.6,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 581.7,
+              "peak_rss_mb": 592.2,
+              "peak_delta_mb": 10.5,
+              "post_rss_mb": 592.2,
+              "post_delta_mb": 10.5,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-5mb.jpg",
+            "rep": 3,
+            "http_status": 200,
+            "wall_ms": 38,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 592.2,
+              "peak_rss_mb": 602.5,
+              "peak_delta_mb": 10.2,
+              "post_rss_mb": 602.5,
+              "post_delta_mb": 10.2,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-15mb.jpg",
+            "rep": 1,
+            "http_status": 200,
+            "wall_ms": 89.1,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 602.5,
+              "peak_rss_mb": 602.7,
+              "peak_delta_mb": 0.2,
+              "post_rss_mb": 602.7,
+              "post_delta_mb": 0.2,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-15mb.jpg",
+            "rep": 2,
+            "http_status": 200,
+            "wall_ms": 90.1,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 602.7,
+              "peak_rss_mb": 603.1,
+              "peak_delta_mb": 0.4,
+              "post_rss_mb": 603.1,
+              "post_delta_mb": 0.4,
+              "samples": 3
+            }
+          },
+          {
+            "fixture": "big/pad-15mb.jpg",
+            "rep": 3,
+            "http_status": 200,
+            "wall_ms": 88,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 603.1,
+              "peak_rss_mb": 603.2,
+              "peak_delta_mb": 0.1,
+              "post_rss_mb": 603.2,
+              "post_delta_mb": 0.1,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-25mb.jpg",
+            "rep": 1,
+            "http_status": 200,
+            "wall_ms": 144.1,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 603.2,
+              "peak_rss_mb": 603.4,
+              "peak_delta_mb": 0.2,
+              "post_rss_mb": 603.4,
+              "post_delta_mb": 0.2,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-25mb.jpg",
+            "rep": 2,
+            "http_status": 200,
+            "wall_ms": 144.3,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 603.4,
+              "peak_rss_mb": 604,
+              "peak_delta_mb": 0.6,
+              "post_rss_mb": 604,
+              "post_delta_mb": 0.6,
+              "samples": 4
+            }
+          },
+          {
+            "fixture": "big/pad-25mb.jpg",
+            "rep": 3,
+            "http_status": 200,
+            "wall_ms": 138.2,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 604,
+              "peak_rss_mb": 604.1,
+              "peak_delta_mb": 0.1,
+              "post_rss_mb": 604.1,
+              "post_delta_mb": 0.1,
+              "samples": 5
+            }
+          },
+          {
+            "fixture": "big/pad-40mb.jpg",
+            "rep": 1,
+            "http_status": 200,
+            "wall_ms": 225.1,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 604.1,
+              "peak_rss_mb": 688.4,
+              "peak_delta_mb": 84.3,
+              "post_rss_mb": 688.4,
+              "post_delta_mb": 84.3,
+              "samples": 6
+            }
+          },
+          {
+            "fixture": "big/pad-40mb.jpg",
+            "rep": 2,
+            "http_status": 200,
+            "wall_ms": 213.3,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 688.4,
+              "peak_rss_mb": 688.5,
+              "peak_delta_mb": 0.1,
+              "post_rss_mb": 688.5,
+              "post_delta_mb": 0.1,
+              "samples": 5
+            }
+          },
+          {
+            "fixture": "big/pad-40mb.jpg",
+            "rep": 3,
+            "http_status": 200,
+            "wall_ms": 217.9,
+            "ok": true,
+            "validation_state": "Invalid",
+            "manifest_count": 1,
+            "error": null,
+            "rss": {
+              "idle_rss_mb": 688.5,
+              "peak_rss_mb": 689.1,
+              "peak_delta_mb": 0.6,
+              "post_rss_mb": 689.1,
+              "post_delta_mb": 0.6,
+              "samples": 6
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "remote": {
+    "url": "https://c2pa-spike.muddled-cartwheel-e75.workers.dev",
+    "requests": [
+      {
+        "fixture": "A.jpg",
+        "http_status": 200,
+        "wall_ms": 63.2,
+        "ok": true,
+        "validation_state": null,
+        "active_manifest": null,
+        "manifest_count": 0,
+        "init_ms": 0,
+        "read_ms": 0,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "C.jpg",
+        "http_status": 200,
+        "wall_ms": 47.5,
+        "ok": true,
+        "validation_state": "Valid",
+        "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+        "manifest_count": 1,
+        "init_ms": 0,
+        "read_ms": 0,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "C_with_CAWG_data.jpg",
+        "http_status": 200,
+        "wall_ms": 103.8,
+        "ok": true,
+        "validation_state": "Valid",
+        "active_manifest": "urn:c2pa:822f2ec0-ef27-4d95-88b4-74586c12873d",
+        "manifest_count": 1,
+        "init_ms": 0,
+        "read_ms": 0,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "cloud.jpg",
+        "http_status": 200,
+        "wall_ms": 345.7,
+        "ok": true,
+        "validation_state": "Valid",
+        "active_manifest": "adobe:urn:uuid:5f37e182-3687-462e-a7fb-573462780391",
+        "manifest_count": 1,
+        "init_ms": 0,
+        "read_ms": 255,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "tampered.jpg",
+        "http_status": 200,
+        "wall_ms": 78,
+        "ok": true,
+        "validation_state": "Invalid",
+        "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+        "manifest_count": 1,
+        "init_ms": 0,
+        "read_ms": 0,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "big/pad-5mb.jpg",
+        "http_status": 200,
+        "wall_ms": 496.2,
+        "ok": true,
+        "validation_state": "Invalid",
+        "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+        "manifest_count": 1,
+        "init_ms": 0,
+        "read_ms": 0,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "big/pad-15mb.jpg",
+        "http_status": 200,
+        "wall_ms": 1626.6,
+        "ok": true,
+        "validation_state": "Invalid",
+        "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+        "manifest_count": 1,
+        "init_ms": 0,
+        "read_ms": 0,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "big/pad-25mb.jpg",
+        "http_status": 200,
+        "wall_ms": 2377.2,
+        "ok": true,
+        "validation_state": "Invalid",
+        "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+        "manifest_count": 1,
+        "init_ms": 0,
+        "read_ms": 0,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "big/pad-40mb.jpg",
+        "http_status": 200,
+        "wall_ms": 4393.3,
+        "ok": true,
+        "validation_state": "Invalid",
+        "active_manifest": "contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e",
+        "manifest_count": 1,
+        "init_ms": 0,
+        "read_ms": 0,
+        "error": null,
+        "cf_ray": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "pad-30mb-generated",
+        "http_status": 200,
+        "wall_ms": 2928.4,
+        "ok": true,
+        "validation_state": "Invalid",
+        "manifest_count": 1,
+        "error": null,
+        "body_preview": null
+      },
+      {
+        "fixture": "pad-35mb-generated",
+        "http_status": 503,
+        "wall_ms": 3927.7,
+        "ok": null,
+        "validation_state": null,
+        "manifest_count": null,
+        "error": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Worker exceeded resource limits | c2pa-spike.muddled-cartwheel-e75.workers.dev | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/",
+        "body_preview": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Worker exceeded resource limits | c2pa-spike.muddled-cartwheel-e75.workers.dev | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/"
+      },
+      {
+        "fixture": "pad-40mb-generated",
+        "http_status": 503,
+        "wall_ms": 4111.6,
+        "ok": null,
+        "validation_state": null,
+        "manifest_count": null,
+        "error": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Worker exceeded resource limits | c2pa-spike.muddled-cartwheel-e75.workers.dev | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/",
+        "body_preview": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Worker exceeded resource limits | c2pa-spike.muddled-cartwheel-e75.workers.dev | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/"
+      }
+    ],
+    "supplementary": {
+      "repeat_runs_3x": [
+        {
+          "fixture": "pad-25mb.jpg",
+          "results": [
+            "200 ok=true vs=Invalid wall~2.5-4.5s",
+            "200 ok=true vs=Invalid wall~2.5s",
+            "200 ok=true vs=Invalid wall~2.7s"
+          ]
+        },
+        {
+          "fixture": "pad-30mb (generated, 31457280 B)",
+          "results": [
+            "200 ok=true vs=Invalid wall~2.8-3.2s x3"
+          ]
+        },
+        {
+          "fixture": "pad-35mb (generated, 36700160 B)",
+          "results": [
+            "503 Worker-exceeded-resource-limits x3"
+          ]
+        },
+        {
+          "fixture": "pad-40mb (generated, 41943040 B)",
+          "results": [
+            "503 Worker-exceeded-resource-limits x3"
+          ]
+        }
+      ],
+      "notes": [
+        "In the protocol run, pad-40mb.jpg (41943040 B) returned 200 once (wall 4393ms) while pad-40mb-generated of identical size returned 503; on repeat 3/3 at 35 and 40 MiB fail, 3/3 at 25/30 MiB pass. Boundary is ~30-35 MiB and appears marginal/nondeterministic at the edge (128MB isolate memory).",
+        "503 body is the Cloudflare \"Worker exceeded resource limits\" error page (error 1102 class), not a worker exception.",
+        "Timer finding: on deployed workerd, performance.now() and Date.now() do NOT advance during synchronous CPU-bound JS (5e6-iteration busy loop -> delta 0 for both clocks) but DO advance across awaits (setTimeout(150) -> delta 150). Therefore init_ms/read_ms are 0 for all CPU-bound reads; cloud.jpg read_ms=255 reflects its awaited remote manifest fetch. Client wall_ms is the only reliable timing.",
+        "Every deployed /read response showed cold=true on some requests and init_ms=0/read_ms=0; cold flag is per-isolate and requests scatter across isolates."
+      ]
+    }
+  }
+}
