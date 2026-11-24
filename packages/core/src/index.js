@@ -22,3 +22,4 @@ export { formatDatetimeFull, formatClaimGenerator } from './format.js';
 export { extractSocialLinks } from './social.js';
 export { getDigitalSourceType, DIGITAL_SOURCE_TYPE_LABELS } from './dst.js';
 export { buildSettings, resolveTrust, trustListsMeta, signerTrustLabel } from './trust.js';
+export { isBlockedHost } from './ssrf.js';

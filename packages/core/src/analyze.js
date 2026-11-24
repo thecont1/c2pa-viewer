@@ -54,14 +54,19 @@ export async function buildExifEntry({ bytes, mime, filename, contentType }) {
     return entry;
 }
 
-// analyzeBytes({ bytes, mime, filename, contentType, engine, trust, include })
+// analyzeBytes({ bytes, mime, filename, contentType, engine, trust, include, trustProfile, strict })
 //   bytes:       Uint8Array | ArrayBuffer of the asset
 //   mime:        image/* MIME for the asset (caller's rule)
 //   filename:    display filename (used for format fallback + entry.filename)
 //   contentType: raw Content-Type hint for detectFormat (may be '')
 //   engine:      { init?(), read(bytes, mime, settings) } — required for c2pa
 //   trust:       { anchors } — optional trust-list anchors
-//   include:     { exif?: bool, c2pa?: bool } — default both true
+//   trustProfile: 'c2pa' | 'c2pa_and_itl' (default 'c2pa_and_itl') — which
+//                trust lists may produce a Trusted verdict. 'c2pa' skips the
+//                ITL fallback read. Omitting it keeps legacy behaviour.
+//   strict:      when true, engine read failures (corrupt/unparseable input)
+//                PROPAGATE instead of being swallowed into the empty result.
+//                Default false — the viewer relies on the lenient behaviour.
 // Returns { exif, c2pa, validation, asset, manifest }:
 //   exif       — the per-file EXIF entry object, or null when include.exif === false
 //   c2pa       — the c2paMetadata-shaped result object, or null when
@@ -73,7 +78,7 @@ export async function buildExifEntry({ bytes, mime, filename, contentType }) {
 //   asset      — { sha256, mime, bytes } — content hash + transport facts,
 //                always computed (feeds the public API's asset block).
 //   manifest   — { label } — store.active_manifest label, null when no manifest.
-export async function analyzeBytes({ bytes, mime, filename, contentType, engine, trust, include }) {
+export async function analyzeBytes({ bytes, mime, filename, contentType, engine, trust, include, trustProfile = 'c2pa_and_itl', strict = false }) {
     const inc = include || {};
     const wantExif = inc.exif !== false;
     const wantC2pa = inc.c2pa !== false;
@@ -104,11 +109,12 @@ export async function analyzeBytes({ bytes, mime, filename, contentType, engine,
             // Init failures must propagate (they are not "no credentials").
             if (engine.init) await engine.init();
             try {
-                const r = await readC2paAsset({ bytes, mime, engine, trust });
+                const r = await readC2paAsset({ bytes, mime, engine, trust, trustProfile });
                 out.c2pa = r.result;
                 out.validation = r.validation;
                 out.manifest = r.manifestLabel !== null ? { label: r.manifestLabel } : null;
             } catch (e) {
+                if (strict) throw e;
                 console.warn('C2PA extraction failed:', e);
                 out.c2pa = emptyC2paResult();
             }

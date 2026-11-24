@@ -186,13 +186,15 @@ export function extractValidation(store) {
 //   manifestLabel — store.active_manifest, null when no manifest
 // `settings` is passed through to engine.read when no trust anchors are
 // given; `trust.anchors` switches to the trust-profile reads.
-export async function readC2paAsset({ bytes, mime, engine, settings = null, trust = null }) {
+// `trustProfile` ('c2pa'|'c2pa_and_itl', default 'c2pa_and_itl') selects
+// which lists may produce a Trusted verdict — 'c2pa' skips the ITL read.
+export async function readC2paAsset({ bytes, mime, engine, settings = null, trust = null, trustProfile = 'c2pa_and_itl' }) {
     const anchors = trust && trust.anchors ? trust.anchors : null;
 
     let handle;
     let trustInfo = null;
     if (anchors) {
-        const res = await readWithTrustProfiles(engine, bytes, mime, anchors);
+        const res = await readWithTrustProfiles(engine, bytes, mime, anchors, trustProfile);
         handle = res.handle;
         trustInfo = { ...res.trust, lists: trustListsMeta(anchors) };
     } else {

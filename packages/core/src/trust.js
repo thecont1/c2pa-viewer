@@ -52,7 +52,14 @@ async function disposeQuietly(handle) {
 //   no manifest                -> { state:null,      basis:null }
 // Only Valid-but-untrusted pays for the second read; Trusted-under-c2pa and
 // Invalid paths do a single read. The losing reader is always disposed.
-export async function readWithTrustProfiles(engine, bytes, mime, anchors) {
+//
+// `profile` selects which trust lists may produce a Trusted verdict:
+//   'c2pa_and_itl' (default) — official C2PA Trust List, falling back to the
+//       combined C2PA+ITL read for Valid-but-untrusted manifests.
+//   'c2pa' — official C2PA Trust List only; the ITL second read is SKIPPED,
+//       so a signer present only on the Interim Trust List resolves to
+//       { state:'Valid', basis:'none' }.
+export async function readWithTrustProfiles(engine, bytes, mime, anchors, profile = 'c2pa_and_itl') {
     const first = await engine.read(bytes, mime, buildSettings(anchors, 'c2pa'));
     if (!first) {
         return { handle: null, trust: { state: null, basis: null } };
@@ -62,6 +69,11 @@ export async function readWithTrustProfiles(engine, bytes, mime, anchors) {
 
     if (state1 === 'Trusted') {
         return { handle: first, trust: { state: 'Trusted', basis: 'c2pa_trust_list' } };
+    }
+
+    if (state1 === 'Valid' && profile === 'c2pa') {
+        // Official-list-only profile: no ITL fallback read.
+        return { handle: first, trust: { state: 'Valid', basis: 'none' } };
     }
 
     if (state1 === 'Valid') {
