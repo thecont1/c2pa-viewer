@@ -173,8 +173,7 @@ function getC2pa() {
     return _c2paPromise;
 }
 
-async function readManifestStore(bytes, mime) {
-    const c2pa = await getC2pa();
+async function readManifestStore(c2pa, bytes, mime) {
     const blob = new Blob([bytes], { type: mime || 'image/jpeg' });
     const reader = await c2pa.reader.fromBlob(blob.type, blob);
     if (!reader) return null;
@@ -326,9 +325,12 @@ function getDigitalSourceType(c2paData) {
 }
 
 // Port of extract_c2pa_data / extract_c2pa_minimal (one pass covers both).
+// SDK init failures (getC2pa) propagate to callers; only manifest-level
+// problems (absent/corrupt store) collapse to null.
 async function extractC2paData(bytes, mime) {
+    const c2pa = await getC2pa();
     try {
-        const ctx = await readManifestStore(bytes, mime);
+        const ctx = await readManifestStore(c2pa, bytes, mime);
         if (!ctx) return null;
         const { reader, store } = ctx;
         const manifest = activeManifest(store);
@@ -342,6 +344,7 @@ async function extractC2paData(bytes, mime) {
                 claim_generator: manifest.claim_generator ?? null,
             },
             signature_info: manifest.signature_info || {},
+            validation_state: store.validation_state ?? null,
             assertions: [],
             ingredients: [],
             actions: [],
@@ -659,6 +662,18 @@ function formatPhotographyMetadata(exifData, iptcData) {
     };
 }
 
+// C2PA validation states that permit a "verified" label. Anything else —
+// including Invalid and absent states — must not claim verification.
+function isVerifiedState(validationState) {
+    return validationState === 'Valid' || validationState === 'Trusted';
+}
+
+function verificationLabel(validationState) {
+    if (validationState === 'Valid' || validationState === 'Trusted') return 'Signature Valid';
+    if (validationState === 'Invalid') return 'Signature Invalid';
+    return 'Not Verified';
+}
+
 function formatProvenanceForWeb(c2paData) {
     const provenance = [];
     if (!c2paData) return provenance;
@@ -732,9 +747,10 @@ function formatProvenanceForWeb(c2paData) {
         provenance.push(actionItem);
     }
 
-    if (sigInfo && Object.keys(sigInfo).length) {
-        provenance.push({ name: 'Verification', verification: 'Signature Valid' });
-    }
+    provenance.push({
+        name: 'Verification',
+        verification: verificationLabel(c2paData.validation_state)
+    });
 
     return provenance;
 }
@@ -815,11 +831,19 @@ export async function c2paMini(uri, timeoutMs = 15000) {
         creator: null, issued_by: null, issued_on: null,
         status: 'Unverified', digital_source_type: null, more,
     };
+    let image;
     try {
-        const { bytes, contentType } = await fetchImageBytes(uri, timeoutMs);
-        const format = detectFormat(bytes, contentType, uri);
+        image = await fetchImageBytes(uri, timeoutMs);
+    } catch {
+        return unverified;
+    }
+    // SDK init failures propagate to the caller as an explicit error —
+    // they must not be reported as 'Unverified'.
+    await getC2pa();
+    try {
+        const format = detectFormat(image.bytes, image.contentType, uri);
         const mime = `image/${format === 'JPEG' ? 'jpeg' : format.toLowerCase()}`;
-        const c2paData = await extractC2paData(bytes, mime);
+        const c2paData = await extractC2paData(image.bytes, mime);
         if (!c2paData) return unverified;
 
         const authorInfo = c2paData.author_info || {};
@@ -835,7 +859,7 @@ export async function c2paMini(uri, timeoutMs = 15000) {
             creator: creator ?? null,
             issued_by: sigInfo.issuer ?? null,
             issued_on: sigInfo.time ? formatDatetimeFull(sigInfo.time, true) : null,
-            status: 'Authenticity Verified',
+            status: isVerifiedState(c2paData.validation_state) ? 'Authenticity Verified' : 'Unverified',
             digital_source_type: digitalSource.label ?? null,
             more,
         };
