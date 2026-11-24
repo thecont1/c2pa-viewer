@@ -12,6 +12,10 @@ const BROWSER_HEADERS = {
 const MAX_BYTES = 80 * 1024 * 1024; // 80 MB — covers large RAW/DNG files
 const FETCH_TIMEOUT_MS = 30000;
 
+// Raster types safe to label as images; anything else is downgraded to
+// octet-stream so HTML/SVG/scriptable content can't execute same-origin.
+const SAFE_IMAGE_TYPE = /^image\/(jpeg|jpg|png|webp|gif|tiff?|bmp|avif)$/i;
+
 // Basic SSRF guard: refuse loopback, private and link-local targets.
 const BLOCKED_HOST = /^(localhost|.*\.localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?|metadata\.google\.internal|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/i;
 
@@ -65,13 +69,36 @@ export async function onRequestGet(context) {
         return json({ error: 'image exceeds size limit' }, 413);
     }
 
+    // content-length may be absent or wrong (chunked responses), so also
+    // count bytes as they stream and abort once the cap is exceeded.
+    let received = 0;
+    const limiter = new TransformStream({
+        transform(chunk, controller) {
+            received += chunk.byteLength;
+            if (received > MAX_BYTES) {
+                controller.error(new Error('image exceeds size limit'));
+                return;
+            }
+            controller.enqueue(chunk);
+        },
+    });
+
+    const rawType = (upstreamResp.headers.get('content-type') || '')
+        .split(';')[0].trim().toLowerCase();
+    const safeType = SAFE_IMAGE_TYPE.test(rawType) ? rawType : 'application/octet-stream';
+
     const outHeaders = new Headers();
-    const contentType = upstreamResp.headers.get('content-type');
-    if (contentType) outHeaders.set('content-type', contentType);
+    outHeaders.set('content-type', safeType);
     outHeaders.set('access-control-allow-origin', '*');
     outHeaders.set('cache-control', 'public, max-age=3600');
+    outHeaders.set('x-content-type-options', 'nosniff');
+    outHeaders.set('content-disposition', 'attachment');
+    outHeaders.set('content-security-policy', 'sandbox');
 
-    return new Response(upstreamResp.body, { status: 200, headers: outHeaders });
+    const body = upstreamResp.body
+        ? upstreamResp.body.pipeThrough(limiter)
+        : null;
+    return new Response(body, { status: 200, headers: outHeaders });
 }
 
 export function onRequest() {
