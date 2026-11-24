@@ -47,3 +47,9 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.rar
+
+# Node/bun toolchain
+node_modules/
+.wrangler/
+.playwright-mcp/
+.deploy-stage/

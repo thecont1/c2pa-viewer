@@ -103,11 +103,7 @@ async function extractParamsFromUrl() {
 
 async function loadExifMetadataFromApi(uri) {
     try {
-        const response = await fetch(`/c2pa/api/exif_metadata?uri=${encodeURIComponent(uri)}`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
+        const data = await C2paApi.exifMetadata(uri);
         
         const imageKey = Object.keys(data)[0];
         return data[imageKey];
@@ -368,11 +364,7 @@ function renderExifMetadata(metadata) {
 
 async function loadC2PAMetadataFromApi(uri) {
     try {
-        const response = await fetch(`/c2pa/api/c2pa_metadata?uri=${encodeURIComponent(uri)}`);
-        if (!response.ok) {
-            return null;
-        }
-        const data = await response.json();
+        const data = await C2paApi.c2paMetadata(uri);
         return {
             provenance: data.provenance,
             thumbnails: data.thumbnails || {},
@@ -384,6 +376,14 @@ async function loadC2PAMetadataFromApi(uri) {
         return null;
     }
 }
+
+// Delegated handler for the expand/collapse buttons rendered into
+// #provenanceList via innerHTML (keeps CSP free of 'unsafe-inline').
+document.addEventListener('click', (e) => {
+    if (e.target.closest('#provenanceList .expand-btn')) {
+        toggleProvenanceExpansion();
+    }
+});
 
 function toggleProvenanceExpansion() {
     const collapsedItems = document.querySelectorAll('.collapsed-item');
@@ -598,7 +598,7 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
         // Add expand/collapse button
         html += `
             <li class="provenance-item expand-toggle" id="provenanceToggle">
-                <button class="expand-btn" onclick="toggleProvenanceExpansion()">
+                <button class="expand-btn" type="button">
                     <span>+${hiddenCount} more entries</span>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -606,7 +606,7 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
                 </button>
             </li>
             <li class="provenance-item collapse-toggle" id="provenanceCollapse" style="display: none;">
-                <button class="expand-btn" onclick="toggleProvenanceExpansion()">
+                <button class="expand-btn" type="button">
                     <span>Show less</span>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="18 15 12 9 6 15"></polyline>
@@ -935,25 +935,13 @@ function clearAllMetadata() {
 }
 
 async function uploadImageFile(file) {
-    const formData = new FormData();
-    formData.append('file', file);
-    
     // Clear previous metadata before loading new image
     clearAllMetadata();
     
     showLoading();
     
     try {
-        const response = await fetch(`/c2pa/api/upload`, {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
+        const data = await C2paApi.uploadMetadata(file);
         const imageKey = Object.keys(data)[0];
         const metadata = data[imageKey];
         

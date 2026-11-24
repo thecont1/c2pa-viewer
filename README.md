@@ -1,6 +1,11 @@
 # C2PA Viewer
 
-An API-based image viewer web application that allows users to verify [C2PA content credentials](https://contentcredentials.org/) as well as view EXIF and IPTC information embedded within the image.
+An image viewer web application that allows users to verify [C2PA content credentials](https://contentcredentials.org/) as well as view EXIF and IPTC information embedded within the image.
+
+> **Deployment**: production runs as a static site on **Cloudflare Pages** — all metadata
+> extraction happens in the browser (`@contentauth/c2pa-web` WASM + `exifr`), with a
+> Pages Function image proxy at `/api/img` for cross-origin fetches. `server.py` remains
+> as a self-hostable FastAPI reference implementation producing the same JSON shapes.
 
 ## Features
 
@@ -239,22 +244,53 @@ Example:
 
 ## Technology Stack
 
-- **Backend**: Python 3.12, FastAPI, c2pa-python
-- **Frontend**: HTML5, CSS3, JavaScript
-- **Metadata Extraction**: 
-  - [c2pa-python](https://github.com/contentauth/c2pa-python) (official C2PA SDK)
-  - [pillow](https://github.com/python-pillow/Pillow) (EXIF and image processing)
-- **Server**: Uvicorn (ASGI server)
+- **Frontend compute**: `c2pa-compute.js` (bundled from `src/compute.js` via `bun build`)
+  - [@contentauth/c2pa-web](https://github.com/contentauth/c2pa-web) — C2PA manifest parsing in a Web Worker (8.4 MB `vendor/c2pa_bg.wasm`)
+  - [exifr](https://github.com/MattKetmo/exifr) — EXIF/GPS/IPTC extraction
+- **Edge**: Cloudflare Pages static hosting + Pages Function (`functions/api/img.js`) image proxy
+- **Self-host reference**: Python 3.12, FastAPI, c2pa-python, pillow, Uvicorn (`server.py`)
+
+## Build & Deploy (Cloudflare Pages)
+
+```bash
+bun install
+bun run deploy      # build + stage + wrangler pages deploy
+```
+
+Do **not** deploy the repository root: `wrangler pages deploy` ignores
+`.gitignore`, so it would upload `node_modules/` and local files like
+`.env` or `config.json`. `bun run stage` (or `scripts/stage-site.sh`)
+copies only the required public assets — `index.html`, `script.js`,
+`styles.css`, the logo, `c2pa-compute.js`, `_headers`,
+`functions/api/img.js`, `vendor/c2pa_bg.wasm` — into `.deploy-stage/`,
+which is what gets deployed. To deploy manually:
+
+```bash
+bun run build && bun run stage
+bunx wrangler pages deploy .deploy-stage --project-name=c2pa-viewer
+```
+
+`c2pa-compute.js` and `vendor/` are committed build artifacts — rerun `bun run build`
+after editing `src/compute.js`. Security headers live in `_headers`; the image proxy
+lives in `functions/api/img.js` (GET `/api/img?url=<https-url>`, streams upstream bytes
+with `Access-Control-Allow-Origin: *`, 80 MB cap, private-host SSRF guard).
+
+The browser fetches the image directly first; when the origin lacks CORS headers it
+falls back to `/api/img`, which re-fetches upstream with browser-like headers —
+mirroring the old `ImagePathContext` behaviour.
 
 ## Main Entry Points
 
 | File | Description |
 |------|-------------|
 | `index.html` | Main HTML file for the application |
-| `server.py` | FastAPI server with all API endpoints |
+| `src/compute.js` | Browser compute port of the API logic (source of truth for the static build) |
+| `c2pa-compute.js` | Bundled compute (built artifact, committed) |
+| `functions/api/img.js` | Pages Function image proxy |
+| `server.py` | FastAPI server with all API endpoints (self-host reference) |
 | `styles.css` | CSS styling |
 | `script.js` | Frontend JavaScript for rendering metadata |
-| `test_server.py` | API endpoint tests |
+| `test_server.py` | API endpoint tests (Python server) |
 
 ## Architecture Notes
 

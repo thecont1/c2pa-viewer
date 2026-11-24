@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <base href="/c2pa/">
+    <!-- base href removed: assets resolve relative to the page path so the
+         app works at the domain root and under any path prefix (e.g. /c2pa/) -->
     <title>Image Metadata Viewer</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -381,6 +382,7 @@
         </div>
     </div>
 
+    <script src="c2pa-compute.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
