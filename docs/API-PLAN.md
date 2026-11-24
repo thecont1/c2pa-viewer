@@ -49,13 +49,27 @@ Run everything with `bun run test` (golden check + parity + OpenAPI).
 ## Phase 1: Sync API MVP
 
 - [ ] `api.` Worker scaffold (Hono, wrangler config, CI deploy)
-- [ ] `POST /v1/verify` accepting multipart, base64 JSON and `url` input
-- [ ] SSRF guard and magic-byte MIME sniffing shared with `functions/api/img.js`
-- [ ] API keys: format, hashed storage in D1, scopes, rotate and revoke
-- [ ] Rate limiting binding plus `RateLimit-*` and `Retry-After` headers
-- [ ] Per-key CORS allowlist and preflight caching
-- [ ] Contract tests against `openapi.yaml`
-- [ ] Load test (k6) with memory and CPU budget recorded
+- [x] `POST /v1/verify` accepting multipart, base64 JSON and `url` input
+- [x] SSRF guard and magic-byte MIME sniffing shared with `functions/api/img.js`
+- [x] API keys: format, hashed storage in D1, scopes, rotate and revoke
+- [x] Rate limiting binding plus `RateLimit-*` and `Retry-After` headers
+- [x] Per-key CORS allowlist and preflight caching
+- [x] Contract tests against `openapi.yaml`
+- [x] Load test with memory and CPU budget recorded (local; production isolate numbers pending account auth — see below)
+
+
+### Phase 1 progress notes
+
+Implemented and verified locally (branch `feat/api-phase0`):
+
+- Gateway Worker `api/` (Hono): `/v1/verify` (multipart/base64/url), `/v1/verify/mini`, `/v1/trust-lists` (public), `/v1/openapi.json` (public). Smoke matrix 44/44 (`bun run test:api`), contract test green (`bun run test:contract`, three waived trust-lists error responses justified by the public-route design).
+- Keys: `c2pa_live_`/`c2pa_test_`, sha256-hashed in D1, types server/browser, tiers, scopes, monthly quota (usage upserted via waitUntil), rotate/revoke via `scripts/keyctl.mjs` (--remote implemented). Test keys sandboxed to fixture corpus hashes.
+- Rate limiting binding verified actually throttling (61st request/minute → 429 rate_limited + Retry-After: 30). Headers on success responses.
+- url input fetches server-side with shared SSRF guard, manual redirect loop (max 5 hops, re-checked per hop), 30s timeout, 20 MiB streaming cap. DNS-rebinding is NOT defended (no resolver primitive in workerd) — documented limitation; risk is low because Workers egress cannot reach private IPs anyway, the guard is defense-in-depth.
+- Load test (`docs/loadtest-results.json`): 180/180 requests zero failures locally. C.jpg p50 35ms sequential; concurrency scales linearly-ish (25-way p95 ~1.09s on a 10-core workstation); pad-15MiB p50 108ms. **RSS never recovers after load** — confirms the P0 ratchet; recycling isolates stays on the Phase 1 remainder list.
+- CI authored (.github/workflows ci.yml + deploy.yml) but never run: needs the branch pushed, plus repo secrets CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID.
+- Viewer production redeployed (branch deploy `--branch main`): trust verification is now live at c2pa.thecontrarian.in; SSRF 403 regression, proxy 200, deep links verified.
+- **BLOCKER for production API**: the account API token in ~/.cf_env lacks Workers Scripts/D1 permissions (D1 list → auth error 10000) and the wrangler OAuth session expired. Real-account deployment + CPU-cap measurement (the 10ms Free-plan question) need either `wrangler login` or a token widened with Workers Scripts:Edit + D1:Edit.
 
 ## Phase 2: MCP
 
