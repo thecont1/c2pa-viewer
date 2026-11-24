@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build:compute": "bun build src/compute.js --outfile=c2pa-compute.js --format=iife --global-name=C2paApi --minify",
-    "build": "bun run build:compute && mkdir -p vendor && cp node_modules/@contentauth/c2pa-web/dist/resources/c2pa_bg.wasm vendor/c2pa_bg.wasm"
+    "build": "bun run build:compute && mkdir -p vendor && cp node_modules/@contentauth/c2pa-web/dist/resources/c2pa_bg.wasm vendor/c2pa_bg.wasm",
+    "stage": "bash scripts/stage-site.sh",
+    "deploy": "bun run build && bun run stage && wrangler pages deploy .deploy-stage --project-name=c2pa-viewer"
   },
   "dependencies": {
     "@contentauth/c2pa-web": "^0.14.3",

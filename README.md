@@ -254,8 +254,20 @@ Example:
 
 ```bash
 bun install
-bun run build        # bundles src/compute.js -> c2pa-compute.js, copies c2pa_bg.wasm -> vendor/
-bunx wrangler pages deploy . --project-name=c2pa-viewer
+bun run deploy      # build + stage + wrangler pages deploy
+```
+
+Do **not** deploy the repository root: `wrangler pages deploy` ignores
+`.gitignore`, so it would upload `node_modules/` and local files like
+`.env` or `config.json`. `bun run stage` (or `scripts/stage-site.sh`)
+copies only the required public assets — `index.html`, `script.js`,
+`styles.css`, the logo, `c2pa-compute.js`, `_headers`,
+`functions/api/img.js`, `vendor/c2pa_bg.wasm` — into `.deploy-stage/`,
+which is what gets deployed. To deploy manually:
+
+```bash
+bun run build && bun run stage
+bunx wrangler pages deploy .deploy-stage --project-name=c2pa-viewer
 ```
 
 `c2pa-compute.js` and `vendor/` are committed build artifacts — rerun `bun run build`
