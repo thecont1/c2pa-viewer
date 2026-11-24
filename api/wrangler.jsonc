@@ -1,0 +1,37 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "c2pa-verify-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-24",
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": ["**/*.wasm"],
+      "fallthrough": true
+    },
+    {
+      // pem/cfg: vendored trust lists. yaml: api/openapi.yaml is served as
+      // text at /v1/openapi.json — the Text rule is what makes it importable.
+      "type": "Text",
+      "globs": ["**/*.pem", "**/*.cfg", "**/*.yaml"],
+      "fallthrough": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "c2pa-verify-api",
+      "database_id": "local-dev"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "RATELIMIT",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    }
+  ]
+}

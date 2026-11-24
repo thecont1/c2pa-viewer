@@ -432,7 +432,7 @@ paths:
                     trust:
                       state: Valid
                       basis: none
-                    more: https://api.c2pa.thecontrarian.in/v1/verify?url=https%3A%2F%2Fexample.com%2Fphoto.jpg
+                    more: https://c2pa.thecontrarian.in/?uri=https%3A%2F%2Fexample.com%2Fphoto.jpg
                 unverified:
                   value:
                     creator: null
@@ -443,7 +443,7 @@ paths:
                     trust:
                       state: null
                       basis: null
-                    more: https://api.c2pa.thecontrarian.in/v1/verify?url=https%3A%2F%2Fexample.com%2Fplain.jpg
+                    more: https://c2pa.thecontrarian.in/?uri=https%3A%2F%2Fexample.com%2Fplain.jpg
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -552,6 +552,7 @@ paths:
       summary: Active trust lists and their provenance
       description: Mirrors `trust/meta.json` — which C2PA Trust List commit and ITL snapshot produced the verdicts.
       operationId: getTrustLists
+      security: []
       responses:
         '200':
           description: Trust-list metadata.
