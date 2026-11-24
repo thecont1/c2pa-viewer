@@ -533,6 +533,13 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
                     ${item.relationship ? `<p class="timestamp">Relationship: ${item.relationship}</p>` : ''}
                 </li>
             `;
+        } else if (item.trust) {
+            return `
+                <li class="provenance-item ${item.trust.startsWith('Trusted') ? 'verified' : ''} ${collapsedClass}" ${hiddenClass}>
+                    <strong>🔏 Signer Trust</strong>
+                    <p>${item.trust}</p>
+                </li>
+            `;
         } else if (item.verification) {
             return `
                 <li class="provenance-item ${item.verification.includes('Valid') ? 'verified' : ''} ${collapsedClass}" ${hiddenClass}>

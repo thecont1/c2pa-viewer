@@ -1,0 +1,52 @@
+{
+  "DSCF9243.jpg": {
+    "exif": {
+      "ApertureValue": 6.918863,
+      "Artist": "MAHESH SHANTARAM",
+      "ColorSpace": 1,
+      "DateTime": "2026:01:06 16:18:19",
+      "DateTimeDigitized": "2019:10:13 23:30:51",
+      "DateTimeOriginal": "2019:10:13 23:30:51",
+      "ExposureMode": 1,
+      "ExposureTime": 3,
+      "FNumber": 11,
+      "Flash": 0,
+      "FocalLength": 63,
+      "ISOSpeedRatings": 100,
+      "LensModel": "GF63mmF2.8 R WR",
+      "Make": "FUJIFILM",
+      "MeteringMode": 5,
+      "Model": "GFX 50S",
+      "SensingMethod": 2,
+      "Software": "Adobe Photoshop Lightroom Classic 15.1 (Macintosh)",
+      "WhiteBalance": 0,
+      "XResolution": 300,
+      "YResolution": 300
+    },
+    "file_size_bytes": 1691842,
+    "file_size_mb": 1.61,
+    "filename": "DSCF9243.jpg",
+    "format": "JPEG",
+    "gps": {},
+    "height": 1252,
+    "iptc": {
+      "author": "MAHESH SHANTARAM"
+    },
+    "photography": {
+      "aperture": "f/11",
+      "artist": "MAHESH SHANTARAM",
+      "camera_make": "FUJIFILM",
+      "camera_model": "GFX 50S",
+      "color_profile": "sRGB IEC61966-2.1",
+      "color_space": "sRGB",
+      "date_digitized": "Oct 13, 2019 at 11:30 PM",
+      "date_original": "Oct 13, 2019 at 11:30 PM",
+      "description": "No description available",
+      "focal_length": "63mm",
+      "iso": "100",
+      "lens_model": "GF63mmF2.8 R WR",
+      "shutter_speed": "3.00s"
+    },
+    "width": 1670
+  }
+}

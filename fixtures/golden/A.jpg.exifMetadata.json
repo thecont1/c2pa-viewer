@@ -1,0 +1,48 @@
+{
+  "A.jpg": {
+    "exif": {
+      "ApertureValue": 4.970854,
+      "ColorSpace": 1,
+      "DateTime": "2022:05:24 10:51:58",
+      "DateTimeDigitized": "2011:07:30 15:41:25",
+      "DateTimeOriginal": "2011:07:30 15:41:25",
+      "ExposureMode": 0,
+      "ExposureTime": 0.016666666666666666,
+      "FNumber": 5.6,
+      "Flash": 9,
+      "FocalLength": 49,
+      "ISOSpeedRatings": 800,
+      "LensModel": "EF-S18-55mm f/3.5-5.6 IS II",
+      "Make": "Canon",
+      "MeteringMode": 5,
+      "Model": "Canon EOS REBEL T3",
+      "Software": "Adobe Lightroom 5.3 (Macintosh)",
+      "WhiteBalance": 0,
+      "XResolution": 240,
+      "YResolution": 240
+    },
+    "file_size_bytes": 61720,
+    "file_size_mb": 0.06,
+    "filename": "A.jpg",
+    "format": "JPEG",
+    "gps": {},
+    "height": 683,
+    "iptc": {},
+    "photography": {
+      "aperture": "f/5.6",
+      "artist": "Unknown",
+      "camera_make": "Canon",
+      "camera_model": "Canon EOS REBEL T3",
+      "color_profile": "sRGB IEC61966-2.1",
+      "color_space": "sRGB",
+      "date_digitized": "Jul 30, 2011 at 3:41 PM",
+      "date_original": "Jul 30, 2011 at 3:41 PM",
+      "description": "No description available",
+      "focal_length": "49mm",
+      "iso": "800",
+      "lens_model": "EF-S18-55mm f/3.5-5.6 IS II",
+      "shutter_speed": "1/60s"
+    },
+    "width": 1024
+  }
+}
