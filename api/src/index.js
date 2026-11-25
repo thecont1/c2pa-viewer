@@ -6,7 +6,7 @@
 //   GET  /v1/openapi.json — the OpenAPI 3.1 document              (PUBLIC)
 //   GET  /health          — ops liveness (not part of the public contract)
 //
-// /v1/jobs* is intentionally NOT registered in this phase.
+// POST /v1/jobs + GET /v1/jobs/{job_id} are the Phase 3 async surface.
 
 import { Hono } from 'hono';
 import { parse as parseYaml } from 'yaml';
@@ -14,6 +14,9 @@ import { parse as parseYaml } from 'yaml';
 import { authMw, rateLimitMw, quotaMw } from './auth.js';
 import { corsMw, preflightMw } from './cors.js';
 import { verifyHandler, miniHandler } from './verify.js';
+import { createJobHandler, getJobHandler } from './jobs.js';
+import { jobsQueueHandler } from './jobs-consumer.js';
+import { JobRunner } from './job-runner.js';
 import { mcpAuthMw, mcpHandler, mcpOptionsHandler } from './mcp.js';
 import { problem } from './errors.js';
 import { TRUST_ANCHORS, trustListsPayload } from './trust-info.js';
@@ -61,6 +64,8 @@ app.delete('/mcp', mcpAuthMw, rateLimitMw, mcpHandler);
 // chain completes, keyed off what authMw stashed.
 app.post('/v1/verify', corsMw, authMw, rateLimitMw, quotaMw, verifyHandler);
 app.get('/v1/verify/mini', corsMw, authMw, rateLimitMw, quotaMw, miniHandler);
+app.post('/v1/jobs', corsMw, authMw, rateLimitMw, quotaMw, createJobHandler);
+app.get('/v1/jobs/:job_id', corsMw, authMw, rateLimitMw, getJobHandler);
 
 // Public endpoints.
 app.get('/v1/trust-lists', async (c) => c.json(await trustListsPayload()));
@@ -76,4 +81,9 @@ app.onError((err, c) => {
     return problem(500, 'internal_error', { detail: 'Unexpected server error.' });
 });
 
-export default app;
+export { JobRunner };
+
+export default {
+    fetch: (request, env, ctx) => app.fetch(request, env, ctx),
+    queue: jobsQueueHandler,
+};

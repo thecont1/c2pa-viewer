@@ -90,12 +90,25 @@ Implemented and verified locally (branch `feat/api-phase0`):
 
 ## Phase 3: Async jobs
 
-- [ ] R2 presigned upload and 24 h lifecycle rule
-- [ ] Queue, consumer Worker, dead-letter queue
-- [ ] Container with native c2pa-rs (streaming), returns raw manifest JSON
-- [ ] `POST /v1/jobs`, `GET /v1/jobs/{id}`
-- [ ] HMAC-signed webhooks with retry and backoff
-- [ ] A 200 MB+ file verifies end to end
+- [x] R2 presigned upload (code ready, needs one-time dashboard creds) and lifecycle rules live
+- [x] Queue, consumer Worker, dead-letter queue
+- [x] Container (Node + c2pa-node native bindings) streaming, one per job
+- [x] `POST /v1/jobs`, `GET /v1/jobs/{id}`
+- [x] HMAC-signed webhooks with retry and backoff
+- [x] A 200 MB+ file verifies end to end
+
+
+### Phase 3 progress notes
+
+Live in production (verified 2026-11-25, smoke-jobs 0 failures + independent re-verification):
+- 220 MiB signed fixture (pad-then-sign) verified end-to-end in 54s create-to-terminal: queued→processing→succeeded, sha256-exact, valid_untrusted (test cert). Small job DSCF9243 in ~11s, matches /v1/verify field-for-field.
+- Architecture: uniform pipeline — url jobs stream upstream→R2 (8 MiB multipart parts, SSRF-guarded), then JobRunner DO (one per job) streams R2 object into container POST /verify; container (node + c2pa-node@0.12.1, standard-1 instance 4GiB) runs the SAME core analyzeBytes; worker formats with toApiResult, stores result in R2 results/ (7d expiry), uploads/ expire 1d.
+- R2 event notifications (uploads/ prefix) trigger the object-create path; verified with externally seeded rows + wrangler object put — include/strip_gps propagate correctly.
+- Webhooks: live-verified HMAC-signed callback to webhook.site (recomputed signature matches), first delayed retry observed; full 4-attempt/DLQ sequence implemented but not waited out.
+- MCP tools submit_verification_job/get_verification_job live, verified in production.
+- Idempotency-Key replay, ownership isolation (404 across keys), clean upstream-404 failure all verified.
+- DEFERRED: real presigned client PUT — needs one-time user action: Cloudflare dashboard → R2 → Manage API Tokens → create token (object read+write, bucket c2pa-verify-jobs) → then `cd api && bunx wrangler secret put R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (note: R2 secret = sha256hex of token value, or dashboard shows both). Until then no-url jobs return clean 503.
+- Instance sizing: wrangler-level instance_type rejected for DO-scheduled containers; size belongs in ctx.container.start() — standard-1 handles 220 MiB, 1 GiB ceiling unproven.
 
 ## Phase 4: Commercial layer
 

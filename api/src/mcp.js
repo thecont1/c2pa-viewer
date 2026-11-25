@@ -21,12 +21,14 @@ import {
 import { fetchAsset } from './urlfetch.js';
 import { explainValidationCode } from './validation-codes.js';
 import { trustListsPayload } from './trust-info.js';
+import { createJobRecord, getJobRow, jobPayload } from './jobs.js';
 
 const SERVER_INSTRUCTIONS = [
     'This server verifies C2PA provenance in image files using the same engine and trust lists as the c2pa-verify REST API.',
     'Verification answers whether a file carries a structurally valid, cryptographically intact, and optionally trusted C2PA manifest; it does not determine whether the image itself is real, authentic, or unmanipulated in a broader journalistic sense.',
     'Use verify_image for the compact high-frequency trust card and verify_image_detailed when you need validation buckets, provenance rows, metadata, ingredients, or the raw manifest.',
     'Use explain_validation_code to interpret validator codes and list_trust_lists or trust://current to inspect the trust-list revision in force.',
+    'For large assets or non-blocking work, use submit_verification_job and then poll get_verification_job; direct-upload jobs return a one-hour presigned PUT URL.',
 ].join(' ');
 
 const TRUST_PROFILES = ['c2pa', 'c2pa_and_itl'];
@@ -111,6 +113,44 @@ const verifyResultOutputSchema = z.looseObject({
         width: z.number().int().nullable(),
         height: z.number().int().nullable(),
     }),
+});
+
+
+const submitJobInputSchema = z.strictObject({
+    url: z.string().url().optional()
+        .describe('Public HTTP(S) image URL to fetch asynchronously. Omit it to create a direct-upload job and receive a presigned PUT URL.'),
+    filename: z.string().optional().describe('Display filename, used as a format hint.'),
+    mime: z.string().optional().describe('Declared image MIME type for direct upload, for example image/jpeg.'),
+    size_bytes: z.number().int().nonnegative().optional()
+        .describe('Declared byte size. The asynchronous cap is 1 GiB.'),
+    webhook_url: z.string().url().optional()
+        .describe('Optional HTTP(S) callback endpoint for the terminal job event.'),
+    include: z.array(z.enum(INCLUDE_VALUES)).optional()
+        .describe('Optional detail sections. Defaults to exif and iptc, matching REST.'),
+    trust: z.enum(TRUST_PROFILES).optional()
+        .describe('Trust profile; default c2pa_and_itl.'),
+    strip_gps: z.boolean().optional()
+        .describe('When true (default), GPS coordinates are stripped from the result.'),
+    idempotency_key: z.string().min(1).max(255).optional()
+        .describe('Optional idempotency key. Reusing it for this API key returns the original job.'),
+});
+
+const jobCreatedOutputSchema = z.looseObject({
+    job_id: z.string(),
+    status: z.enum(['queued', 'awaiting_upload']),
+    upload: z.looseObject({
+        url: z.string(),
+        method: z.literal('PUT'),
+        headers: z.looseObject({}),
+        expires_at: z.string(),
+    }).nullable(),
+});
+
+const jobOutputSchema = z.looseObject({
+    job_id: z.string(),
+    status: z.enum(['queued', 'awaiting_upload', 'processing', 'succeeded', 'failed']),
+    created_at: z.string(),
+    completed_at: z.string().nullable(),
 });
 
 const explainOutputSchema = z.strictObject({
@@ -264,6 +304,43 @@ function createServer(context) {
             outputSchema: verifyResultOutputSchema,
         },
         async (args) => jsonResult(await runMeteredVerification(args, context, args.include)),
+    );
+
+    server.registerTool(
+        'submit_verification_job',
+        {
+            title: 'Submit asynchronous image verification job',
+            description: 'Create a Phase 3 asynchronous verification job. Provide url for server-side fetching (up to 1 GiB), or omit url to receive a one-hour presigned PUT upload URL. Returns immediately with job_id; poll get_verification_job for the terminal VerifyResult or problem object.',
+            inputSchema: submitJobInputSchema,
+            outputSchema: jobCreatedOutputSchema,
+        },
+        async (args) => {
+            const quotaFailure = await checkQuota(context.env.DB, context.keyRow);
+            if (quotaFailure) throw toolInputError(quotaFailure.detail);
+            const { idempotency_key: idempotencyKey, include, ...rest } = args;
+            const created = await createJobRecord(context.env, context.keyRow, context.keyKind, {
+                ...rest,
+                ...(include ? { include: include.join(',') } : {}),
+            }, idempotencyKey || null);
+            return jsonResult(created.payload);
+        },
+    );
+
+    server.registerTool(
+        'get_verification_job',
+        {
+            title: 'Get asynchronous verification job status',
+            description: 'Fetch one owned asynchronous verification job by job_id. Succeeded jobs include the full VerifyResult; failed jobs include the terminal problem+json object. Jobs owned by other API keys are indistinguishable from missing jobs.',
+            inputSchema: z.strictObject({
+                job_id: z.string().min(1).describe('Job id returned by submit_verification_job or POST /v1/jobs.'),
+            }),
+            outputSchema: jobOutputSchema,
+        },
+        async ({ job_id: jobId }) => {
+            const row = await getJobRow(context.env.DB, jobId);
+            if (!row || row.key_id !== context.keyRow.id) throw toolInputError('Job not found.');
+            return jsonResult(await jobPayload(context.env, row));
+        },
     );
 
     server.registerTool(

@@ -2,7 +2,7 @@
 // identically in browsers, workerd and Node — no createImageBitmap.
 // Falls back to exifr's parsed width/height when headers don't yield dims.
 
-import { parse as exifrParse } from 'exifr';
+import { parse as exifrParse } from 'exifr/dist/full.esm.mjs';
 
 function jpegDimensions(u8) {
     // Walk JPEG segments until a Start-Of-Frame marker.

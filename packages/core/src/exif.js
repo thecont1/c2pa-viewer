@@ -1,7 +1,7 @@
 // EXIF/IPTC extraction via exifr (works on ArrayBuffer in browsers,
 // workerd and Node). Ported verbatim from src/compute.js.
 
-import { parse as exifrParse } from 'exifr';
+import { parse as exifrParse } from 'exifr/dist/full.esm.mjs';
 
 // exifr's output names differ from the EXIF tag names server.py used;
 // EXIF_ALIASES maps them back so response shapes stay identical.

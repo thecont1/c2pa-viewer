@@ -63,7 +63,10 @@ async function readBodyCapped(resp) {
     return out;
 }
 
-export async function fetchAsset(urlString, env) {
+// Validate the caller-supplied URL without fetching it. Async jobs use this
+// at acceptance time; the redirect-hopping fetch path re-applies checkHost to
+// every concrete upstream URL before bytes are fetched.
+export function validateAssetUrl(urlString, env) {
     let url;
     try {
         url = new URL(urlString);
@@ -73,6 +76,12 @@ export async function fetchAsset(urlString, env) {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         throw new ApiError('invalid', 'only http(s) urls are allowed');
     }
+    checkHost(url, env);
+    return url;
+}
+
+export async function fetchAsset(urlString, env) {
+    const url = validateAssetUrl(urlString, env);
 
     const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
     let current = url;

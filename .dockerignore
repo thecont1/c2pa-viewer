@@ -1,0 +1,13 @@
+.git
+node_modules
+fixtures
+.wrangler
+.deploy-stage
+.venv
+archive
+docs
+scripts
+trust
+vendor
+*.log
+.DS_Store

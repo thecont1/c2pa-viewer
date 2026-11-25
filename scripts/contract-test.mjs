@@ -1,19 +1,21 @@
 #!/usr/bin/env bun
-// contract-test.mjs — Phase 1 contract-completeness test for c2pa-verify-api.
+// contract-test.mjs — contract-completeness test for c2pa-verify-api.
 //
 //   bun scripts/contract-test.mjs
 //
 // Unlike the smoke matrix (a hand-written behavior matrix), this test starts
 // from api/openapi.yaml and walks the documented operations programmatically:
 //
-//   1. verifies the worker's implemented /v1 surface is exactly the Phase 1
-//      operation set (jobs are documented but intentionally unimplemented);
+//   1. verifies the worker's implemented /v1 surface is exactly the documented
+//      operation set (including the Phase 3 jobs control plane);
 //   2. produces every documented success response for those operations and
 //      validates it against the operation's response schema with ajv;
 //   3. reproduces every reproducible documented error status for those
 //      operations, validating HTTP status, application/problem+json shape,
 //      the Problem schema, the `code` enum, and the exact example `code`;
-//   4. proves /v1/jobs* is absent and undocumented methods do not succeed.
+//   4. proves undocumented methods do not succeed. Async job execution itself
+//      is covered by scripts/smoke-jobs.mjs because containers/queues cannot be
+//      fully validated in local dev; this test covers the jobs HTTP contract.
 //
 // Documented-but-impossible errors are listed in WAIVED with justification.
 // An empty WAIVED list is the goal; a non-empty list is acceptable only when
@@ -36,9 +38,10 @@ const FIXTURES = join(ROOT, 'fixtures');
 const WRANGLER = join(ROOT, 'node_modules/.bin/wrangler');
 const MAX_SYNC_BYTES = 20 * 1024 * 1024;
 
-// The spec documents the future jobs API as well as the implemented phase-1
-// surface. These operationIds define the implemented surface for this phase.
-const PHASE1_OPERATION_IDS = ['verifyAsset', 'verifyMini', 'getTrustLists', 'getOpenApi'];
+// These operationIds define the implemented HTTP surface. Job execution is
+// asynchronous and container-backed, but creation/polling are normal Worker
+// routes and are schema-checked here using the local control plane.
+const PHASE1_OPERATION_IDS = ['verifyAsset', 'verifyMini', 'createJob', 'getJob', 'getTrustLists', 'getOpenApi'];
 
 // Task scope explicitly covers these documented error statuses. 400/500 are
 // documented generically on /verify but are outside the requested matrix.
@@ -198,7 +201,7 @@ function d1(args) {
 }
 
 function startWrangler(port) {
-    const child = spawn(WRANGLER, ['dev', '--local', '--port', String(port), '--var', 'ALLOW_LOCAL_UPSTREAM:1'], {
+    const child = spawn(WRANGLER, ['dev', '--local', '--port', String(port), '--var', 'ALLOW_LOCAL_UPSTREAM:1', '--var', 'R2_ACCESS_KEY_ID:contract-test-only', '--var', 'R2_SECRET_ACCESS_KEY:contract-test-only'], {
         cwd: API_DIR,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
@@ -301,29 +304,31 @@ function implementedV1Routes() {
         const path = m[2];
         if (!path.startsWith('/v1/')) continue;
         if (method === 'options' && path === '/v1/*') continue; // CORS preflight helper, not an API operation
-        routes.push({ method, path });
+        routes.push({ method, path: path.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '{$1}') });
     }
     return routes.sort((a, b) => `${a.path} ${a.method}`.localeCompare(`${b.path} ${b.method}`));
 }
 
 function checkSurface() {
-    console.log('== implemented surface vs phase-1 OpenAPI surface ==');
+    console.log('== implemented surface vs OpenAPI surface ==');
     const expected = PHASE1_OPERATIONS
         .map(({ specPath, method }) => ({ method, path: `/v1${specPath}` }))
         .sort((a, b) => `${a.path} ${a.method}`.localeCompare(`${b.path} ${b.method}`));
     const actual = implementedV1Routes();
     const fmt = (list) => list.map((r) => `${r.method.toUpperCase()} ${r.path}`).join(', ');
-    row('implemented /v1 routes exactly match the phase-1 operation set',
+    row('implemented /v1 routes exactly match the documented operation set',
         JSON.stringify(actual) === JSON.stringify(expected),
         `expected=[${fmt(expected)}] actual=[${fmt(actual)}]`);
 
     const jobsInSpec = ALL_OPERATIONS.filter((op) => op.specPath.startsWith('/jobs'));
-    row('OpenAPI contains future jobs operations excluded from phase-1 implementation',
-        jobsInSpec.length === 2,
-        `${jobsInSpec.length} jobs operations documented; implementation intentionally omits them`);
+    row('OpenAPI jobs operations are present in the implemented operation set',
+        jobsInSpec.length === 2 && jobsInSpec.every((op) => PHASE1_OPERATION_IDS.includes(op.operationId)),
+        `${jobsInSpec.length} jobs operations documented`);
 }
 
 // ------------------------------------------------------------ test bodies --
+
+let contractJobId = null;
 
 async function validateSuccessResponses(base, keys, upstreamPort) {
     console.log('\n== documented success responses ==');
@@ -338,6 +343,16 @@ async function validateSuccessResponses(base, keys, upstreamPort) {
         verifyMini: () => req('GET', `${base}/v1/verify/mini?url=${encodeURIComponent(upstreamC)}`, {
             key: keys.server.key,
         }),
+        createJob: async () => {
+            const r = await req('POST', `${base}/v1/jobs`, {
+                key: keys.server.key,
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ filename: 'contract-upload.jpg', mime: 'image/jpeg', size_bytes: 3 }),
+            });
+            if (r.json && r.json.job_id) contractJobId = r.json.job_id;
+            return r;
+        },
+        getJob: () => req('GET', `${base}/v1/jobs/${contractJobId || 'job_missing'}`, { key: keys.server.key }),
         getTrustLists: () => req('GET', `${base}/v1/trust-lists`),
         getOpenApi: () => req('GET', `${base}/v1/openapi.json`),
     };
@@ -381,10 +396,14 @@ async function reproduceErrors(base, keys, upstreamPort) {
     // 401 unauthorized — missing bearer key on both protected operations.
     put('verifyAsset', 401, await req('POST', `${base}/v1/verify`));
     put('verifyMini', 401, await req('GET', `${base}/v1/verify/mini`));
+    put('createJob', 401, await req('POST', `${base}/v1/jobs`, { headers: { 'content-type': 'application/json' }, body: '{}' }));
+    put('getJob', 401, await req('GET', `${base}/v1/jobs/job_missing`));
 
     // 403 forbidden — a syntactically valid but revoked key on both operations.
     put('verifyAsset', 403, await req('POST', `${base}/v1/verify`, { key: keys.revoked.key }));
     put('verifyMini', 403, await req('GET', `${base}/v1/verify/mini?url=${encodeURIComponent(`http://127.0.0.1:${upstreamPort}/C.jpg`)}`, { key: keys.revoked.key }));
+    put('createJob', 403, await req('POST', `${base}/v1/jobs`, { key: keys.revoked.key, headers: { 'content-type': 'application/json' }, body: '{}' }));
+    put('getJob', 403, await req('GET', `${base}/v1/jobs/job_missing`, { key: keys.revoked.key }));
 
     // 413 payload_too_large — decoded multipart asset is exactly 20 MiB + 1.
     const tooBig = Buffer.concat([C, Buffer.alloc(MAX_SYNC_BYTES + 1 - C.length)]);
@@ -392,10 +411,20 @@ async function reproduceErrors(base, keys, upstreamPort) {
         key: keys.server.key,
         form: multipart(tooBig, 'too-big.jpg', 'image/jpeg'),
     }));
+    put('createJob', 413, await req('POST', `${base}/v1/jobs`, {
+        key: keys.server.key,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ filename: 'too-big.jpg', size_bytes: 1024 * 1024 * 1024 + 1 }),
+    }));
 
     // 415 unsupported_media_type — neither a supported request content type
     // nor image evidence. This is the exact operation-level media-type failure.
     put('verifyAsset', 415, await req('POST', `${base}/v1/verify`, {
+        key: keys.server.key,
+        headers: { 'content-type': 'text/plain' },
+        body: 'hello',
+    }));
+    put('createJob', 415, await req('POST', `${base}/v1/jobs`, {
         key: keys.server.key,
         headers: { 'content-type': 'text/plain' },
         body: 'hello',
@@ -407,6 +436,11 @@ async function reproduceErrors(base, keys, upstreamPort) {
         form: multipart(C, 'C.jpg', 'image/jpeg'),
     }));
     put('verifyMini', 422, await req('GET', `${base}/v1/verify/mini`, { key: keys.server.key }));
+    put('createJob', 422, await req('POST', `${base}/v1/jobs`, {
+        key: keys.server.key,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ filename: 'bad.jpg', unexpected: true }),
+    }));
 
     // 502 upstream_fetch_failed — the local fixture upstream is fetchable but
     // deliberately returns HTTP 500, which the gateway maps to a 502 problem.
@@ -433,6 +467,8 @@ async function reproduceErrors(base, keys, upstreamPort) {
 
     put('verifyMini', 429, await req('GET', `${base}/v1/verify/mini`, { key: keys.rate.key }));
     put('verifyAsset', 429, await req('POST', `${base}/v1/verify`, { key: keys.rate.key }));
+    put('createJob', 429, await req('POST', `${base}/v1/jobs`, { key: keys.rate.key, headers: { 'content-type': 'application/json' }, body: '{}' }));
+    put('getJob', 429, await req('GET', `${base}/v1/jobs/job_missing`, { key: keys.rate.key }));
 
     return reproductions;
 }
@@ -493,19 +529,8 @@ async function validateErrorContract(reproductions) {
     }
 }
 
-async function checkAbsentAndUndocumentedRoutes(base, key) {
-    console.log('\n== absent routes and undocumented methods ==');
-    const checks = [
-        ['POST', '/v1/jobs'],
-        ['GET', '/v1/jobs/job_01JZX4K8Q2MNBVCXZ'],
-    ];
-    for (const [method, path] of checks) {
-        const r = await req(method, `${base}${path}`, { key });
-        row(`${method} ${path} (documented future jobs route) → 404`,
-            r.status === 404,
-            `status=${r.status}`);
-    }
-
+async function checkUndocumentedRoutes(base, key) {
+    console.log('\n== undocumented methods ==');
     const methodChecks = [
         ['GET', '/v1/verify'],
         ['PUT', '/v1/verify'],
@@ -514,6 +539,10 @@ async function checkAbsentAndUndocumentedRoutes(base, key) {
         ['PUT', '/v1/verify/mini'],
         ['POST', '/v1/trust-lists'],
         ['PUT', '/v1/openapi.json'],
+        ['PUT', '/v1/jobs'],
+        ['DELETE', '/v1/jobs'],
+        ['POST', '/v1/jobs/job_01JZX4K8Q2MNBVCXZ'],
+        ['PUT', '/v1/jobs/job_01JZX4K8Q2MNBVCXZ'],
     ];
     for (const [method, path] of methodChecks) {
         const r = await req(method, `${base}${path}`, { key });
@@ -530,6 +559,7 @@ async function main() {
 
     console.log('\n== seeding local D1 ==');
     d1(['--file', 'migrations/0001_init.sql']);
+    d1(['--file', 'migrations/0002_jobs.sql']);
     const server = keyctl(['create', '--name', 'contract-server', '--type', 'server', '--tier', 'free']);
     const revoked = keyctl(['create', '--name', 'contract-revoked', '--type', 'server', '--tier', 'free']);
     spawnSync('bun', ['scripts/keyctl.mjs', 'revoke', '--id', revoked.id], { cwd: ROOT, encoding: 'utf8' });
@@ -557,7 +587,7 @@ async function main() {
         await validateSuccessResponses(base, keys, upstreamPort);
         const reproductions = await reproduceErrors(base, keys, upstreamPort);
         await validateErrorContract(reproductions);
-        await checkAbsentAndUndocumentedRoutes(base, server.key);
+        await checkUndocumentedRoutes(base, server.key);
     } catch (e) {
         row(`contract harness error: ${e.message}`, false);
         if (child.log) console.log('--- wrangler output (tail) ---\n' + child.log.split('\n').slice(-30).join('\n'));

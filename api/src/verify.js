@@ -102,7 +102,7 @@ function formatFromHints(contentType, filename) {
 //   3. a declared non-image type with no image evidence -> 415
 //   4. no evidence at all -> core default image/jpeg; the engine rejects
 //      undecodable input downstream (422 reader failure)
-function resolveMime(u8, declaredType, filename) {
+export function resolveMime(u8, declaredType, filename) {
     const sniffed = sniffMagic(u8);
     if (sniffed) return imageMime(sniffed);
 
@@ -255,7 +255,7 @@ function withRateHeaders(res) {
 }
 
 // Map an ApiError kind to its problem response.
-function apiErrorResponse(e) {
+export function apiErrorResponse(e) {
     switch (e.kind) {
         case 'too_large': return payloadTooLarge();
         case 'sandbox':

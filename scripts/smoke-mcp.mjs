@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// smoke-mcp.mjs — Phase 2 MCP smoke test for c2pa-verify-api.
+// smoke-mcp.mjs — Phase 2/3 MCP smoke test for c2pa-verify-api.
 //
 //   bun scripts/smoke-mcp.mjs
 //
@@ -35,6 +35,8 @@ const ajv = new Ajv2020({ strict: false, allErrors: true });
 addFormats(ajv);
 ajv.addSchema({ components: { schemas: SPEC_DOC.components.schemas } }, 'spec');
 const validateVerifyResult = ajv.getSchema('spec#/components/schemas/VerifyResult');
+const validateJobCreated = ajv.getSchema('spec#/components/schemas/JobCreated');
+const validateJob = ajv.getSchema('spec#/components/schemas/Job');
 function schemaErrors(v) { return JSON.stringify((v.errors || []).slice(0, 3)).slice(0, 400); }
 
 let failures = 0;
@@ -82,7 +84,7 @@ async function portFree(port) {
 }
 
 function startWrangler(port) {
-    const child = spawn(WRANGLER, ['dev', '--local', '--port', String(port), '--var', 'ALLOW_LOCAL_UPSTREAM:1'], {
+    const child = spawn(WRANGLER, ['dev', '--local', '--port', String(port), '--var', 'ALLOW_LOCAL_UPSTREAM:1', '--var', 'R2_ACCESS_KEY_ID:mcp-smoke-test-only', '--var', 'R2_SECRET_ACCESS_KEY:mcp-smoke-test-only'], {
         cwd: API_DIR,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
@@ -218,6 +220,7 @@ async function main() {
 
     console.log('== seeding local D1 ==');
     d1(['--file', 'migrations/0001_init.sql']);
+    d1(['--file', 'migrations/0002_jobs.sql']);
     const server = keyctl(['create', '--name', 'mcp-smoke-server', '--type', 'server', '--tier', 'pro']);
     const meter = keyctl(['create', '--name', 'mcp-smoke-meter', '--type', 'server', '--tier', 'pro']);
     const quota = keyctl(['create', '--name', 'mcp-smoke-quota', '--type', 'server', '--tier', 'free']);
@@ -264,8 +267,8 @@ async function main() {
 
         const tools = await client.listTools();
         const names = tools.tools.map((t) => t.name);
-        row('tools/list exactly the phase-2 tool set (no jobs tools)',
-            sortedJson(names) === sortedJson(['verify_image', 'verify_image_detailed', 'explain_validation_code', 'list_trust_lists']),
+        row('tools/list exactly the phase-2+3 tool set',
+            sortedJson(names) === sortedJson(['verify_image', 'verify_image_detailed', 'submit_verification_job', 'get_verification_job', 'explain_validation_code', 'list_trust_lists']),
             names.join(','));
 
         const resources = await client.listResources();
@@ -325,6 +328,42 @@ async function main() {
                 `status=${sc && sc.status}${sc && !validateVerifyResult(sc) ? ` schema=${schemaErrors(validateVerifyResult)}` : ''}`);
             row('verify_image_detailed text mirrors structuredContent JSON',
                 !!sc && JSON.stringify(JSON.parse(textOf(r))) === JSON.stringify(sc));
+        }
+
+        // -- Phase 3 job tools through the real MCP client ----------------------
+        // Local dev cannot run the Cloudflare Queue consumer/container pipeline,
+        // so this exercises the control-plane contract using a direct-upload job.
+        // Production execution of these exact tools is covered by smoke-jobs.mjs.
+        {
+            const idem = `mcp-smoke-${Date.now()}`;
+            const args = { filename: 'mcp-upload.jpg', mime: 'image/jpeg', size_bytes: C.length, idempotency_key: idem };
+            const submitted = await client.callTool({ name: 'submit_verification_job', arguments: args });
+            const created = submitted.structuredContent || {};
+            row('submit_verification_job direct-upload returns schema-valid JobCreated',
+                submitted.isError !== true
+                && created.status === 'awaiting_upload'
+                && created.upload && created.upload.method === 'PUT'
+                && validateJobCreated(created) === true,
+                `job=${created.job_id}${!validateJobCreated(created) ? ` schema=${schemaErrors(validateJobCreated)}` : ''}`);
+
+            const replay = await client.callTool({ name: 'submit_verification_job', arguments: args });
+            row('submit_verification_job idempotency_key replay returns same job_id',
+                replay.isError !== true && replay.structuredContent && replay.structuredContent.job_id === created.job_id,
+                `first=${created.job_id} replay=${replay.structuredContent && replay.structuredContent.job_id}`);
+
+            const got = await client.callTool({ name: 'get_verification_job', arguments: { job_id: created.job_id } });
+            const job = got.structuredContent || {};
+            row('get_verification_job returns schema-valid awaiting_upload Job',
+                got.isError !== true
+                && job.job_id === created.job_id
+                && job.status === 'awaiting_upload'
+                && validateJob(job) === true,
+                `status=${job.status}${!validateJob(job) ? ` schema=${schemaErrors(validateJob)}` : ''}`);
+
+            const missing = await client.callTool({ name: 'get_verification_job', arguments: { job_id: 'job_does_not_exist' } });
+            row('get_verification_job unknown id is a tool error',
+                missing.isError === true,
+                `isError=${missing.isError || false}`);
         }
 
         // -- explain_validation_code ------------------------------------------
