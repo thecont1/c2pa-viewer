@@ -21,7 +21,7 @@
     {
       "binding": "DB",
       "database_name": "c2pa-verify-api",
-      "database_id": "local-dev"
+      "database_id": "0e4461c8-9386-46f3-84b6-6ab128703f55"
     }
   ],
   "ratelimits": [

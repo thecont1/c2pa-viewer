@@ -9817,10 +9817,84 @@
     }
   ],
   "deployed": {
-    "status": "blocked_no_cloudflare_auth",
-    "recorded_at": "2026-11-24T23:50:30.661Z",
-    "whoami_output": "You are not authenticated. Please run `wrangler login`. To deploy without logging in, run a command like `wrangler deploy --temporary` to use a temporary preview account.",
-    "actions_taken": "No real D1 database, worker deployment, key seeding, or production measurement was attempted because wrangler has no authenticated account and no CLOUDFLARE_API_TOKEN/CLOUDFLARE_ACCOUNT_ID environment variables are present.",
-    "production_measurements": []
+    "url": "https://c2pa-verify-api.thecontrarian.workers.dev",
+    "date": "2026-11-25",
+    "note": "real-account measurement; replaces the temporary-preview-account caveat from P0",
+    "results": [
+      {
+        "fixture": "C.jpg",
+        "n": 3,
+        "all_status": 200,
+        "wall_s": [
+          0.8,
+          0.21,
+          0.19
+        ],
+        "verdict": "valid_untrusted"
+      },
+      {
+        "fixture": "DSCF9243.jpg",
+        "n": 2,
+        "all_status": 200,
+        "wall_s": [
+          0.37,
+          0.53
+        ],
+        "verdict": "trusted (interim_trust_list)"
+      },
+      {
+        "fixture": "pad-5mb.jpg",
+        "n": 2,
+        "all_status": 200,
+        "wall_s": [
+          0.59,
+          0.6
+        ],
+        "verdict": "invalid (expected: padding breaks data hash)"
+      },
+      {
+        "fixture": "pad-15mb.jpg",
+        "n": 3,
+        "all_status": 200,
+        "wall_s": [
+          1.85,
+          1.62,
+          1.71
+        ],
+        "verdict": "invalid (expected)"
+      },
+      {
+        "fixture": "pad-19mb.jpg",
+        "n": 3,
+        "all_status": 200,
+        "wall_s": [
+          1.85,
+          2.02,
+          2.14
+        ],
+        "verdict": "invalid (expected); at-cap memory stress passes"
+      },
+      {
+        "fixture": "pad-25mb.jpg",
+        "n": 3,
+        "all_status": 413,
+        "note": "correctly rejected by 20 MiB sync cap with max_sync_bytes member"
+      },
+      {
+        "fixture": "pad-30mb.jpg",
+        "n": 3,
+        "all_status": 413
+      },
+      {
+        "fixture": "pad-35mb.jpg",
+        "n": 3,
+        "all_status": 413
+      }
+    ],
+    "conclusions": [
+      "no Cloudflare 1102 resource-limit errors at any size up to the 20 MiB cap \u2014 the account tolerates multi-hundred-ms CPU verification",
+      "the 20 MiB sync cap holds end-to-end; memory ceiling never engaged in production because rejection happens pre-processing",
+      "usage metering live: 13 successful verifies metered, 413 rejections unmetered"
+    ]
   }
 }
