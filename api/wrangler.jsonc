@@ -56,9 +56,9 @@
         "max_retries": 3,
         "dead_letter_queue": "c2pa-verify-jobs-dlq",
         "retry_delay": 30,
-        // A 1 GiB verification can take several minutes; avoid duplicate
-        // delivery while the first invocation is still inside the container.
-        "visibility_timeout_ms": 900000,
+        // visibility_timeout is a pull-consumer-only setting and would be
+        // ignored on this push consumer. Redelivery during a long verification
+        // is instead absorbed by claimProcessing's processing-token guard.
         "max_concurrency": 8
       }
     ]

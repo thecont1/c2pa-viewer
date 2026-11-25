@@ -315,8 +315,9 @@ function createServer(context) {
             outputSchema: jobCreatedOutputSchema,
         },
         async (args) => {
-            const quotaFailure = await checkQuota(context.env.DB, context.keyRow);
-            if (quotaFailure) throw toolInputError(quotaFailure.detail);
+            // Quota is enforced inside createJobRecord — after the idempotent
+            // replay lookup — so a replayed submission recovers its job even
+            // when the key has since reached its quota.
             const { idempotency_key: idempotencyKey, include, ...rest } = args;
             const created = await createJobRecord(context.env, context.keyRow, context.keyKind, {
                 ...rest,

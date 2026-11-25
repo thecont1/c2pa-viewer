@@ -64,11 +64,26 @@ async function verify(req, res) {
     const tmp = `/tmp/c2pa-asset-${randomUUID()}`;
     let size = 0;
     try {
-        await pipeline(req, countingTransform(MAX_BYTES, (n) => { size = n; }), createWriteStream(tmp));
+        // Spool and read failures are container-local I/O problems, not asset
+        // problems — a 422 would terminally fail the job with no retry. They
+        // surface as 500 so the consumer treats the attempt as retryable.
+        try {
+            await pipeline(req, countingTransform(MAX_BYTES, (n) => { size = n; }), createWriteStream(tmp));
+        } catch (e) {
+            if (e && /1 GiB/.test(e.message || '')) throw e;
+            console.error('spool failed:', e && e.stack ? e.stack : e);
+            return json(res, 500, { error: 'temporary file spool failed' });
+        }
         if (size === 0) return json(res, 422, { error: 'asset is empty' });
         // Required shape: ephemeral-disk spool first, then one full in-memory read.
         // standard-1 (4 GiB) leaves headroom for this buffer plus c2pa/exifr copies.
-        const bytes = await readFile(tmp);
+        let bytes;
+        try {
+            bytes = await readFile(tmp);
+        } catch (e) {
+            console.error('spool read failed:', e && e.stack ? e.stack : e);
+            return json(res, 500, { error: 'temporary file read failed' });
+        }
         const analysis = await analyzeWithTimeout({
             bytes,
             mime,

@@ -147,21 +147,55 @@ export function displayNameFromUrl(urlString) {
     return 'image';
 }
 
+// Read the raw request body with the byte cap enforced while streaming, not
+// just from the declared Content-Length — a missing or understated header must
+// not let an oversized body through to the parser. The declared-length check
+// stays as a fast reject.
+async function readBoundedBody(rawRequest) {
+    const declared = Number(rawRequest.headers.get('content-length') || 0);
+    if (declared > MAX_RAW_BODY_BYTES) {
+        throw new ApiError('too_large', `request body of ${declared} bytes exceeds the 28 MiB raw cap`);
+    }
+    if (!rawRequest.body) return new Uint8Array(0);
+    const reader = rawRequest.body.getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_RAW_BODY_BYTES) {
+            try { await reader.cancel(); } catch { }
+            throw new ApiError('too_large', `request body exceeds the 28 MiB raw cap`);
+        }
+        chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const chunk of chunks) { out.set(chunk, off); off += chunk.byteLength; }
+    return out;
+}
+
 // Parse the POST /v1/verify request into { bytes, declaredType, filename }.
 // Throws ApiError for every input-level failure.
 async function parseVerifyInput(c) {
-    // Early raw-body reject: content-length over 25 MiB never reaches parsing.
-    const contentLength = Number(c.req.header('content-length') || 0);
-    if (contentLength > MAX_RAW_BODY_BYTES) {
-        throw new ApiError('too_large', `request body of ${contentLength} bytes exceeds the 25 MiB raw cap`);
-    }
+    const ctHeader = c.req.header('content-type') || '';
+    const ct = ctHeader.split(';')[0].trim().toLowerCase();
 
-    const ct = (c.req.header('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (ct === 'multipart/form-data' || ct === 'application/json') {
+        // One bounded read up front; the parsers below never see an uncapped body.
+        var rawBytes = await readBoundedBody(c.req.raw);
+    }
 
     if (ct === 'multipart/form-data') {
         let form;
         try {
-            form = await c.req.raw.formData();
+            const reparsed = new Request(c.req.raw.url, {
+                method: c.req.raw.method,
+                headers: { 'content-type': ctHeader },
+                body: rawBytes,
+            });
+            form = await reparsed.formData();
         } catch (e) {
             throw new ApiError('invalid', `malformed multipart body: ${e && e.message ? e.message : e}`);
         }
@@ -186,20 +220,32 @@ async function parseVerifyInput(c) {
     if (ct === 'application/json') {
         let body;
         try {
-            body = await c.req.json();
+            body = JSON.parse(new TextDecoder().decode(rawBytes));
         } catch {
             throw new ApiError('invalid', 'malformed JSON body');
         }
         if (!body || typeof body !== 'object' || Array.isArray(body)) {
             throw new ApiError('invalid', 'JSON body must be an object');
         }
-        const hasData = body.data !== undefined && body.data !== null;
-        const hasUrl = body.url !== undefined && body.url !== null;
+        // Exactly one key present, regardless of the value it carries: an
+        // explicit null for the other input is ambiguous client input, not a
+        // absent key, so it is rejected like any both-keys body.
+        const hasData = Object.hasOwn(body, 'data');
+        const hasUrl = Object.hasOwn(body, 'url');
         if (hasData === hasUrl) {
             throw new ApiError('invalid', 'provide exactly one of data or url');
         }
         if (hasUrl) {
             if (typeof body.url !== 'string') throw new ApiError('invalid', 'url must be a string');
+            // Type-check the hints up front: a numeric mime or filename would
+            // otherwise reach toLowerCase()/split() downstream and throw a
+            // TypeError instead of a clean input error.
+            if (body.mime !== undefined && body.mime !== null && typeof body.mime !== 'string') {
+                throw new ApiError('invalid', 'mime must be a string');
+            }
+            if (body.filename !== undefined && body.filename !== null && typeof body.filename !== 'string') {
+                throw new ApiError('invalid', 'filename must be a string');
+            }
             const fetched = await fetchAsset(body.url, c.env);
             enforceSize(fetched.bytes.byteLength);
             return {
@@ -271,6 +317,11 @@ export function apiErrorResponse(e) {
             return problem(422, 'invalid_request', { detail: e.message });
         case 'upstream':
             return problem(502, 'upstream_fetch_failed', { detail: e.message });
+        case 'quota':
+            return problem(429, 'quota_exceeded', {
+                detail: e.message,
+                headers: { 'RateLimit-Policy': RATELIMIT_POLICY, 'RateLimit-Limit': RATELIMIT_LIMIT },
+            });
         default:
             return problem(422, 'invalid_request', { detail: e.message });
     }

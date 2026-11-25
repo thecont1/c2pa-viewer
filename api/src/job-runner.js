@@ -83,6 +83,17 @@ export class JobRunner extends DurableObject {
             const obj = await this.env.JOBS_BUCKET.get(spec.object_key);
             if (!obj) return Response.json({ error: 'input object missing' }, { status: 404 });
 
+            // Verify exactly the object version the consumer's metadata reads
+            // came from. Presigned PUTs are reusable, so the object may have
+            // been replaced in between; 409 tells the consumer to retry rather
+            // than publish a result mixing two versions.
+            if (spec.expected_etag && obj.etag && spec.expected_etag !== obj.etag) {
+                return Response.json({ error: `object replaced (etag ${obj.etag}, expected ${spec.expected_etag})` }, { status: 409 });
+            }
+            if (typeof spec.expected_size === 'number' && spec.expected_size !== obj.size) {
+                return Response.json({ error: `object replaced (size ${obj.size}, expected ${spec.expected_size})` }, { status: 409 });
+            }
+
             const headers = {
                 'x-mime': spec.mime,
                 'x-filename': encodeURIComponent(spec.filename || 'image'),

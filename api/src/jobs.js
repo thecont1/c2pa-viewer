@@ -3,11 +3,12 @@
 // request/response contract, validation, persistence and idempotency.
 
 import { AwsClient } from 'aws4fetch';
-import { ApiError, problem } from './errors.js';
+import { ApiError, problem, buildProblemPayload } from './errors.js';
 import { parseInclude, parseTrust, parseStripGps, apiErrorResponse, displayNameFromUrl } from './verify.js';
 import { validateAssetUrl } from './urlfetch.js';
-import { incrementUsage, currentMonth } from './db.js';
+import { currentMonth } from './db.js';
 import { isBlockedHost } from '../../packages/core/src/ssrf.js';
+import { checkQuota } from './auth.js';
 
 export const MAX_JOB_BYTES = 1024 * 1024 * 1024; // 1 GiB
 export const JOB_BUCKET = 'c2pa-verify-jobs';
@@ -16,22 +17,11 @@ const JOB_CREATE_FIELDS = new Set(['url', 'filename', 'mime', 'size_bytes', 'web
 
 function nowIso() { return new Date().toISOString(); }
 
+// Stored job errors are problem+json payloads (not Responses); the factory is
+// shared with errors.js so a title/type change reaches both polling and REST
+// error responses.
 export function problemPayload(status, code, detail, extra = {}) {
-    const titles = {
-        unauthorized: 'Unauthorized', forbidden: 'Forbidden', rate_limited: 'Too Many Requests',
-        quota_exceeded: 'Too Many Requests', payload_too_large: 'Payload Too Large',
-        unsupported_media_type: 'Unsupported Media Type', invalid_request: 'Unprocessable Entity',
-        upstream_fetch_failed: 'Upstream Fetch Failed', job_not_found: 'Job not found',
-        internal_error: 'Internal Server Error',
-    };
-    return {
-        type: `https://api.c2pa.thecontrarian.in/problems/${code}`,
-        title: titles[code] || 'Error',
-        status,
-        code,
-        ...(detail ? { detail } : {}),
-        ...extra,
-    };
+    return buildProblemPayload(status, code, detail, extra);
 }
 
 function validateHttpCallback(urlString, field, env) {
@@ -174,13 +164,6 @@ async function jobCreatedPayload(env, row) {
     };
 }
 
-async function meterSubmission(env, keyRow, keyKind) {
-    if (!keyRow || keyKind === 'test') return;
-    // Count the verification at submission. Bytes are added when the real
-    // object size is known; refund-on-failure does not exist yet.
-    await incrementUsage(env.DB, keyRow.id, currentMonth(), 0);
-}
-
 // Shared REST/MCP creation path. Returns { statusCode, payload, row }.
 export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey) {
     const input = validateJobCreate(body, env);
@@ -197,20 +180,45 @@ export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey
     // credentials have not been configured yet.
     if (!input.url) await createUploadUrl(env, 'probe', input.mime);
 
+    // Quota is enforced here — after the idempotent replay check above, never
+    // in middleware: a replayed creation must recover the original job even
+    // when the key has since reached its quota. New submissions still cannot
+    // start once the quota is exhausted.
+    const quotaFailure = await checkQuota(env.DB, keyRow);
+    if (quotaFailure) throw new ApiError('quota', quotaFailure.detail);
+
     const jobId = `job_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
     const objectKey = `uploads/${jobId}`;
     const now = nowIso();
     const status = input.url ? 'queued' : 'awaiting_upload';
 
+    // Commit the job row and the submission charge in one atomic D1 batch:
+    // the job can never become runnable without its charge persisted, and the
+    // charge can never exist without the job. Bytes are added when the real
+    // object size is known; refund-on-failure does not exist yet. Test keys
+    // are never charged.
+    const chargeable = keyRow && keyKind !== 'test';
+    const insertStmt = env.DB.prepare(
+        `INSERT INTO jobs (job_id,key_id,status,idempotency_key,source,webhook_url,include,trust,strip_gps,error,object_key,size_bytes,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind(
+        jobId, keyRow.id, status, idem, JSON.stringify(input.source), input.webhook_url,
+        input.include, input.trust, input.strip_gps ? 1 : 0, null, objectKey, input.size_bytes, now, now
+    );
+    const batch = [insertStmt];
+    if (chargeable) {
+        batch.push(env.DB.prepare(
+            `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at)
+             VALUES (?, ?, 1, 0, ?)
+             ON CONFLICT (key_id, month) DO UPDATE SET
+               verify_count = verify_count + 1,
+               updated_at   = excluded.updated_at`
+        ).bind(keyRow.id, currentMonth(), now));
+    }
+
     let row;
     try {
-        await env.DB.prepare(
-            `INSERT INTO jobs (job_id,key_id,status,idempotency_key,source,webhook_url,include,trust,strip_gps,error,object_key,size_bytes,created_at,updated_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-        ).bind(
-            jobId, keyRow.id, status, idem, JSON.stringify(input.source), input.webhook_url,
-            input.include, input.trust, input.strip_gps ? 1 : 0, null, objectKey, input.size_bytes, now, now
-        ).run();
+        await env.DB.batch(batch);
     } catch (e) {
         if (idem) {
             const existing = await jobRowByIdempotency(env.DB, keyRow.id, idem);
@@ -226,12 +234,21 @@ export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey
         try {
             await env.JOBS_QUEUE.send({ type: 'job', job_id: jobId });
         } catch (e) {
-            try { await env.DB.prepare('DELETE FROM jobs WHERE job_id = ?').bind(jobId).run(); } catch { }
+            // Never delete the row after creation: a concurrent idempotent
+            // replay may already have acknowledged it, and deleting would leave
+            // that caller polling a 404. Mark it terminally failed instead.
+            try {
+                await env.DB.prepare(
+                    `UPDATE jobs SET status='failed', error=?, updated_at=?, completed_at=? WHERE job_id=? AND status='queued'`
+                ).bind(
+                    JSON.stringify(problemPayload(500, 'internal_error', 'job dispatch failed')),
+                    nowIso(), nowIso(), jobId
+                ).run();
+            } catch { }
             throw e;
         }
     }
 
-    await meterSubmission(env, keyRow, keyKind);
     return { statusCode: 202, payload: await jobCreatedPayload(env, row), row, idempotentReplay: false };
 }
 

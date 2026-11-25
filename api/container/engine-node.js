@@ -16,6 +16,11 @@ function convertSettings(settings) {
         },
         verify: {
             verifyTrust,
+            // Forward the remote-manifest fetch toggle (remote-manifest SSRF
+            // guard in packages/core/src/trust.js). Absent means SDK default.
+            ...(legacy.verify && typeof legacy.verify.remote_manifest_fetch === 'boolean'
+                ? { remoteManifestFetch: legacy.verify.remote_manifest_fetch }
+                : {}),
         },
     };
 }

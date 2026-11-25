@@ -208,7 +208,7 @@ function trustTransferJson() {
     });
 }
 
-async function invokeRunner(env, row, mime, filename) {
+async function invokeRunner(env, row, mime, filename, version = {}) {
     const id = env.JOB_RUNNER.idFromName(row.job_id);
     const stub = env.JOB_RUNNER.get(id);
     const payload = {
@@ -218,6 +218,12 @@ async function invokeRunner(env, row, mime, filename) {
         filename,
         trust_profile: row.trust || 'c2pa_and_itl',
         settings: trustTransferJson(),
+        // Object-version evidence the metadata/sniff reads were taken from.
+        // A presigned PUT can be reused, replacing the object between those
+        // reads and the runner's later GET; the runner refuses to verify a
+        // replaced object so the result never mixes versions.
+        expected_size: version.size ?? null,
+        expected_etag: version.etag ?? null,
     };
     return stub.fetch('https://job-runner/verify', {
         method: 'POST',
@@ -242,6 +248,12 @@ async function processJob(env, jobId, token) {
     try {
         let head;
         let declaredMime = source.mime || '';
+        // Object-version evidence for the runner binding. The direct-upload
+        // object can be replaced by presigned-PUT reuse between these metadata
+        // reads and the runner's GET, so its etag is captured here; the url
+        // path object is written once by this consumer and cannot have
+        // pre-existed, so the size check alone binds it.
+        let objectEtag = null;
         if (source.url) {
             const upstream = await openUpstream(source.url, env);
             const upstreamType = (upstream.resp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
@@ -252,6 +264,7 @@ async function processJob(env, jobId, token) {
         } else {
             const meta = await env.JOBS_BUCKET.head(row.object_key);
             if (!meta) throw new TerminalJobError(422, 'invalid_request', 'uploaded object is missing');
+            objectEtag = meta.etag || null;
             sizeBytes = meta.size;
             if (sizeBytes > MAX_JOB_BYTES) {
                 throw new TerminalJobError(413, 'payload_too_large', 'asset exceeds the 1 GiB asynchronous verification cap', { max_job_bytes: MAX_JOB_BYTES });
@@ -261,14 +274,41 @@ async function processJob(env, jobId, token) {
         }
         if (!sizeBytes) throw new TerminalJobError(422, 'invalid_request', 'asset is empty');
 
+        // Test-key corpus boundary, checked BEFORE the expensive container run
+        // (the sync path does the same at verify.js). Every corpus fixture is
+        // far below 20 MiB, so anything larger can never match and fails fast;
+        // small objects are hashed directly from R2. The post-analysis check
+        // below stays as the belt-and-braces enforcement on the result path.
+        const keyRowPre = await env.DB.prepare('SELECT display_prefix FROM keys WHERE id = ?').bind(row.key_id).first();
+        const isTestKey = keyRowPre && typeof keyRowPre.display_prefix === 'string' && keyRowPre.display_prefix.startsWith('c2pa_test_');
+        if (isTestKey) {
+            const MAX_CORPUS_BYTES = 20 * 1024 * 1024;
+            if (sizeBytes > MAX_CORPUS_BYTES) {
+                throw new TerminalJobError(403, 'forbidden', 'test keys only accept the fixture corpus');
+            }
+            const obj = await env.JOBS_BUCKET.get(row.object_key);
+            if (!obj) throw new TerminalJobError(422, 'invalid_request', 'uploaded object is missing');
+            const digest = await crypto.subtle.digest('SHA-256', await obj.arrayBuffer());
+            const hexDigest = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+            if (!SANDBOX_SHA256.has(hexDigest)) {
+                throw new TerminalJobError(403, 'forbidden', 'test keys only accept the fixture corpus');
+            }
+        }
+
         let mime;
         try { mime = resolveMime(head || new Uint8Array(), declaredMime, filename); }
         catch (e) { throw terminalFromApiError(e); }
 
-        const resp = await invokeRunner(env, row, mime, filename);
+        const resp = await invokeRunner(env, row, mime, filename, { size: sizeBytes, etag: objectEtag });
         const text = await resp.text();
         let analysis = null;
         try { analysis = JSON.parse(text); } catch { }
+        if (resp.status === 409) {
+            // Object version changed underneath the job (presigned-PUT reuse).
+            // Retryable: once the client stops rewriting, a later attempt binds
+            // to the final version.
+            throw new Error(`object version mismatch for ${row.object_key}: ${text.slice(0, 200)}`);
+        }
         if (resp.status === 422) {
             throw new TerminalJobError(422, 'invalid_request', (analysis && analysis.error) || 'the asset could not be read — corrupt or unparseable input');
         }
@@ -327,11 +367,17 @@ async function postWebhook(urlString, body, signature) {
             signal: AbortSignal.timeout(30000),
         });
         if (resp.status >= 300 && resp.status < 400 && resp.headers.get('location')) {
+            // Release the body before following the redirect — an unconsumed
+            // body holds the connection and resources open.
+            try { await resp.body.cancel(); } catch { }
             current = new URL(resp.headers.get('location'), current);
             if (current.protocol !== 'http:' && current.protocol !== 'https:') throw new Error('webhook redirected to non-http(s) URL');
             continue;
         }
-        try { await resp.arrayBuffer(); } catch { }
+        // Only the status is used. Cancel rather than buffer: a receiver that
+        // answers 2xx with a huge body must not be able to exhaust the Worker
+        // memory limit after accepting the callback.
+        try { await resp.body.cancel(); } catch { }
         return resp.status;
     }
     throw new Error('webhook redirected too many times');
@@ -385,8 +431,28 @@ async function handleMessage(env, message) {
         if (!jobId) return;
         if (body.object.size > MAX_JOB_BYTES) {
             const row = await getJobRow(env.DB, jobId);
+            if (row && (row.status === 'succeeded' || row.status === 'failed')) {
+                // Recovery path: a previous delivery committed the terminal row
+                // but failed before scheduling the webhook.
+                await maybeEnqueueWebhook(env, row);
+                return;
+            }
             if (row && row.status === 'awaiting_upload') {
-                await finishJob(env, row, 'failed', problemPayload(413, 'payload_too_large', 'asset exceeds the 1 GiB asynchronous verification cap', { max_job_bytes: MAX_JOB_BYTES }), body.object.size);
+                // Conditional transition: a valid replacement upload may claim
+                // and complete the job concurrently. Only fail the job when the
+                // row is still awaiting_upload — never clobber a terminal state
+                // — and schedule the webhook only when this update won.
+                const problem413 = problemPayload(413, 'payload_too_large', 'asset exceeds the 1 GiB asynchronous verification cap', { max_job_bytes: MAX_JOB_BYTES });
+                const now = nowIso();
+                const r = await env.DB.prepare(
+                    `UPDATE jobs SET status='failed', error=?, size_bytes=?, processing_token=NULL, updated_at=?, completed_at=? WHERE job_id=? AND status='awaiting_upload'`
+                ).bind(JSON.stringify(problem413), body.object.size, now, now, row.job_id).run();
+                if ((r.meta && r.meta.changes) === 1) {
+                    row.status = 'failed';
+                    row.completed_at = now;
+                    row.size_bytes = body.object.size;
+                    await maybeEnqueueWebhook(env, row);
+                }
             }
             return;
         }
@@ -402,10 +468,21 @@ export async function jobsQueueHandler(batch, env) {
         } catch (e) {
             console.error('queue message failed:', e && e.stack ? e.stack : e);
             const body = message.body || {};
-            if (body.type === 'job' && message.attempts >= 4 && typeof body.job_id === 'string') {
+            // Resolve the job for both verification message families — the
+            // direct-upload R2 notification carries object.key, not job_id —
+            // while webhook deliveries stay out of this path entirely.
+            let failedJobId = null;
+            if (body.type === 'job' && typeof body.job_id === 'string') failedJobId = body.job_id;
+            else if (body.object && typeof body.object.key === 'string' && body.object.key.startsWith('uploads/')) {
+                failedJobId = body.object.key.slice('uploads/'.length).split('/')[0] || null;
+            }
+            if (failedJobId && message.attempts >= 4) {
                 try {
-                    const row = await getJobRow(env.DB, body.job_id);
-                    if (row && row.status === 'processing') {
+                    const row = await getJobRow(env.DB, failedJobId);
+                    // Conditional on this message still owning the processing
+                    // token: without it, an exhausted redelivery could fail a
+                    // job another delivery has since legitimately claimed.
+                    if (row && row.status === 'processing' && row.processing_token === message.id) {
                         await finishJob(env, row, 'failed', problemPayload(500, 'internal_error', 'job processing failed after repeated attempts'), row.size_bytes || null);
                     }
                 } catch (inner) { console.error('terminal failure update failed:', inner); }

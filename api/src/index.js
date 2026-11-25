@@ -64,7 +64,9 @@ app.delete('/mcp', mcpAuthMw, rateLimitMw, mcpHandler);
 // chain completes, keyed off what authMw stashed.
 app.post('/v1/verify', corsMw, authMw, rateLimitMw, quotaMw, verifyHandler);
 app.get('/v1/verify/mini', corsMw, authMw, rateLimitMw, quotaMw, miniHandler);
-app.post('/v1/jobs', corsMw, authMw, rateLimitMw, quotaMw, createJobHandler);
+// Quota on job creation is enforced inside createJobRecord — after the
+// idempotent-replay lookup — so a replay can recover its job even at quota.
+app.post('/v1/jobs', corsMw, authMw, rateLimitMw, createJobHandler);
 app.get('/v1/jobs/:job_id', corsMw, authMw, rateLimitMw, getJobHandler);
 
 // Public endpoints.

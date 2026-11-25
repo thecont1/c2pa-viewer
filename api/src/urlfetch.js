@@ -36,10 +36,19 @@ function checkHost(url, env) {
     }
 }
 
+// Release an unused upstream body so the connection/resources are freed.
+// Cancellation failures must never replace the intended API error.
+async function cancelQuietly(resp) {
+    try {
+        if (resp && resp.body) await resp.body.cancel();
+    } catch { }
+}
+
 async function readBodyCapped(resp) {
     // content-length pre-check when present (may be absent or wrong).
     const declared = Number(resp.headers.get('content-length') || 0);
     if (declared > MAX_SYNC_BYTES) {
+        await cancelQuietly(resp);
         throw new ApiError('too_large', `upstream asset exceeds the 20 MiB sync cap (content-length ${declared})`);
     }
     if (!resp.body) return new Uint8Array(0);
@@ -105,11 +114,16 @@ export async function fetchAsset(urlString, env) {
             try {
                 next = new URL(r.headers.get('location'), current);
             } catch {
+                await cancelQuietly(r);
                 throw new ApiError('upstream', 'upstream redirect target is not a valid URL');
             }
             if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+                await cancelQuietly(r);
                 throw new ApiError('upstream', 'upstream redirected to a non-http(s) URL');
             }
+            // The redirect response body is never read — release it before
+            // following the target instead of leaving it attached.
+            await cancelQuietly(r);
             if (hop === MAX_REDIRECTS) break; // falls through to the overflow error below
             current = next;
             continue;
@@ -123,6 +137,7 @@ export async function fetchAsset(urlString, env) {
         throw new ApiError('upstream', `too many redirects (max ${MAX_REDIRECTS})`);
     }
     if (resp.status < 200 || resp.status >= 300) {
+        await cancelQuietly(resp);
         throw new ApiError('upstream', `upstream returned HTTP ${resp.status}`);
     }
 

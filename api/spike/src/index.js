@@ -53,8 +53,8 @@ export default {
     // /verify (raw body + x-mime/x-filename) plus query options:
     //   ?include=exif,iptc,gps,thumbnails,raw_manifest  (default exif,iptc)
     //   ?strip_gps=false
-    //   ?trust=c2pa|c2pa_and_itl  (accepted; resolution always distinguishes
-    //     both lists so `basis` is reported — see trust.js)
+    //   ?trust=c2pa|c2pa_and_itl  (default c2pa_and_itl; selects the trust
+    //     profile exactly like the production /v1/verify surface)
     if (url.pathname === '/v1-verify' && request.method === 'POST') {
       const mime = request.headers.get('x-mime') || 'image/jpeg';
       const filename = request.headers.get('x-filename') || 'image';
@@ -63,6 +63,7 @@ export default {
         .split(',').map((s) => s.trim()).filter(Boolean);
       const stripGps = url.searchParams.get('strip_gps') !== 'false';
       try {
+        const trustParam = url.searchParams.get('trust');
         const analysis = await analyzeBytes({
           bytes,
           mime,
@@ -70,6 +71,7 @@ export default {
           contentType: mime,
           engine: wasmEngine,
           trust: { anchors: TRUST_ANCHORS },
+          trustProfile: trustParam === 'c2pa' ? 'c2pa' : 'c2pa_and_itl',
           include: { exif: true, c2pa: true },
         });
         return Response.json(toApiResult(analysis, {

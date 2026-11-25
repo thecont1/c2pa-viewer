@@ -17,10 +17,10 @@ const CODE_TITLES = {
     internal_error: 'Internal Server Error',
 };
 
-// problem(status, code, { detail, headers, ...extraMembers })
-// Builds the problem response. `type` follows the spec convention
-// https://api.c2pa.thecontrarian.in/problems/<code>.
-export function problem(status, code, { detail, headers = {}, ...extra } = {}) {
+// buildProblemPayload(status, code, detail, extra) — the plain object form of
+// a problem, shared by the REST error responses and the stored job errors
+// assembled in jobs.js (so a title/type change reaches both).
+export function buildProblemPayload(status, code, detail, extra = {}) {
     const body = {
         type: `https://api.c2pa.thecontrarian.in/problems/${code}`,
         title: CODE_TITLES[code] || 'Error',
@@ -29,6 +29,14 @@ export function problem(status, code, { detail, headers = {}, ...extra } = {}) {
     };
     if (detail) body.detail = detail;
     Object.assign(body, extra);
+    return body;
+}
+
+// problem(status, code, { detail, headers, ...extraMembers })
+// Builds the problem response. `type` follows the spec convention
+// https://api.c2pa.thecontrarian.in/problems/<code>.
+export function problem(status, code, { detail, headers = {}, ...extra } = {}) {
+    const body = buildProblemPayload(status, code, detail, extra);
     return new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/problem+json', ...headers },
@@ -49,12 +57,17 @@ export class ApiError extends Error {
 }
 
 export const MAX_SYNC_BYTES = 20 * 1024 * 1024;       // 20 MiB decoded asset cap
-export const MAX_RAW_BODY_BYTES = 25 * 1024 * 1024;   // 25 MiB raw request body cap
+// Raw request body cap. Base64 inflates 4/3, so a exactly-at-cap 20 MiB asset
+// is 27,962,028 bytes on the wire before the JSON envelope; 28 MiB carries it
+// with envelope slack while still bounding what the server buffers. A 20 MiB+1
+// asset therefore reaches — and is rejected by — the decoded-size check rather
+// than the transport cap.
+export const MAX_RAW_BODY_BYTES = 28 * 1024 * 1024;   // 28 MiB raw request body cap
 
 export function payloadTooLarge() {
     return problem(413, 'payload_too_large', {
         detail: 'The asset exceeds the 20 MiB synchronous verification cap.',
         max_sync_bytes: MAX_SYNC_BYTES,
-        hint: 'Use POST /jobs for assets larger than 20 MiB.',
+        hint: 'Use POST /v1/jobs for assets larger than 20 MiB.',
     });
 }

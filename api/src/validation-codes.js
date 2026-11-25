@@ -174,11 +174,11 @@ export const VALIDATION_CODES = {
         ]
     ),
     'ingredient.claimSignature.validated': entry(
-        'Ingredient claim signature validated',
+        'Ingredient claim signature reference hash matches',
         'info',
-        'The claim signature in an ingredient\'s referenced manifest validated successfully.',
-        'The ingredient\'s own claim is cryptographically intact.',
-        ['Normal result for a valid signed ingredient.']
+        'The hash of the ingredient\'s C2PA claim signature box matches the reference in the ingredient assertion.',
+        'The signature box bytes are the ones the referring provenance chain expects. This is a hash match only — the ingredient signature itself is still subject to its own signature validation result, which can reject it.',
+        ['Normal result for an intact signed ingredient.']
     ),
     'ingredient.hashedURI.mismatch': entry(
         'Ingredient reference hash mismatch',
@@ -233,8 +233,12 @@ export const VALIDATION_CODES = {
 // conservative generic info entry so agents can still reason over the raw code.
 export function explainValidationCode(code) {
     const normalized = typeof code === 'string' ? code.trim() : '';
-    const found = VALIDATION_CODES[normalized];
-    if (found) return { code: normalized, ...found };
+    // Own-property lookup only: otherwise an inherited name like 'toString'
+    // resolves to a function and skips the fallback below, returning an entry
+    // with none of the required explanation fields.
+    if (Object.hasOwn(VALIDATION_CODES, normalized)) {
+        return { code: normalized, ...VALIDATION_CODES[normalized] };
+    }
     return {
         code: normalized,
         title: 'Unknown validation code',

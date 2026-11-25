@@ -88,6 +88,14 @@ paths:
                       enum: [c2pa, c2pa_and_itl]
                     strip_gps:
                       type: boolean
+                  # Exactly one input: any presence of a `url` key — even a
+                  # null value — is rejected in the data branch.
+                  not:
+                    required: [url]
+                    # Declared only so schema linters can resolve the required
+                    # key above; meaningless inside `not`.
+                    properties:
+                      url: { type: 'null' }
                 - type: object
                   required: [url]
                   properties:
@@ -106,6 +114,14 @@ paths:
                       enum: [c2pa, c2pa_and_itl]
                     strip_gps:
                       type: boolean
+                  # Exactly one input: any presence of a `data` key — even a
+                  # null value — is rejected in the url branch.
+                  not:
+                    required: [data]
+                    # Declared only so schema linters can resolve the required
+                    # key above; meaningless inside `not`.
+                    properties:
+                      data: { type: 'null' }
       responses:
         '200':
           description: Verification result.
@@ -176,8 +192,8 @@ paths:
                         serial_number: "720724073027128164015125666832722375746636448153"
                         signed_at: "2023-09-29T17:40:14+00:00"
                       digital_source_type:
-                        code: digitalCapture
-                        label: Digital Camera
+                        code: algorithmicMedia
+                        label: Algorithmic Media
                       author:
                         "@context": http://schema.org/
                         "@type": CreativeWork
@@ -425,7 +441,7 @@ paths:
                   # Shape mirrors fixtures/golden/*.c2paMini.json plus `trust`.
                   value:
                     creator: Adobe make_test
-                    digital_source_type: Digital Camera
+                    digital_source_type: Algorithmic Media
                     issued_by: C2PA Test Signing Cert
                     issued_on: Sep 29, 2023 at 11:10 PM GMT+5:30
                     status: Authenticity Verified
@@ -448,6 +464,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/Unprocessable'
         '429':
@@ -464,7 +484,9 @@ paths:
         supply `webhook_url` for a `job.completed` callback.
 
         `Idempotency-Key` (optional header): repeating a request with the same
-        key returns the original job instead of enqueueing a duplicate.
+        key returns `200` with the original job's acceptance payload (its
+        creation-time status, not the current state — poll `GET /jobs/{job_id}`
+        for that) instead of enqueueing a duplicate.
       operationId: createJob
       parameters:
         - name: Idempotency-Key
@@ -493,6 +515,12 @@ paths:
                   headers:
                     content-type: image/jpeg
                   expires_at: "2026-11-24T22:27:29Z"
+        '200':
+          description: Same-key replay. Returns the original job's acceptance payload, not its current status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreated'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -526,9 +554,9 @@ paths:
                 $ref: '#/components/schemas/Job'
               example:
                 job_id: job_01JZX4K8Q2MNBVCXZ
-                status: succeeded
+                status: processing
                 created_at: "2026-11-24T21:30:00Z"
-                completed_at: "2026-11-24T21:30:04Z"
+                completed_at: null
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -602,6 +630,15 @@ webhooks:
     post:
       operationId: jobCompletedWebhook
       summary: Job completion callback
+      # Outbound callback: the receiver does not present this API's bearer key.
+      # Authentication is the X-C2PA-Signature HMAC described below.
+      security: []
+      parameters:
+        - name: X-C2PA-Signature
+          in: header
+          required: true
+          schema: { type: string }
+          description: '`t=<unix>,v1=<hex>` — hex is HMAC-SHA256 of `"<t>.<raw body>"` keyed by the webhook signing secret.'
       description: |
         Sent to the job's `webhook_url` when a job reaches `succeeded` or
         `failed`. Signed with `X-C2PA-Signature: t=<unix>,v1=<hex>` where the
@@ -665,7 +702,11 @@ components:
       in: query
       required: false
       schema: { type: boolean, default: true }
-      description: When true (default), `metadata.gps` is null and no GPS data appears anywhere in the response.
+      description: |
+        When true (default), `metadata.gps` is null and no GPS data appears anywhere in the response.
+        For `raw_manifest` this means assertion payloads are redacted recursively before return:
+        every object key whose final namespace component (the part after the last `:`) starts with
+        `gps` or is exactly `latitude`/`longitude` (case-insensitive) is dropped at any depth.
   headers:
     RateLimitLimit:
       description: Requests allowed per window.
@@ -728,7 +769,7 @@ components:
             status: 413
             code: payload_too_large
             max_sync_bytes: 20971520
-            hint: Use POST /jobs for assets larger than 20 MiB.
+            hint: Use POST /v1/jobs for assets larger than 20 MiB.
     UnsupportedMediaType:
       description: Unsupported Content-Type or image format.
       content:
@@ -1020,6 +1061,23 @@ components:
       type: object
       required: [job_id, status, created_at]
       additionalProperties: false
+      allOf:
+        - if:
+            properties: { status: { const: succeeded } }
+            required: [status]
+          then:
+            required: [result]
+            properties:
+              result:
+                $ref: '#/components/schemas/VerifyResult'
+        - if:
+            properties: { status: { const: failed } }
+            required: [status]
+          then:
+            required: [error]
+            properties:
+              error:
+                $ref: '#/components/schemas/Problem'
       properties:
         job_id: { type: string }
         status:
