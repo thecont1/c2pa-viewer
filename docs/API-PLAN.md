@@ -90,7 +90,7 @@ Implemented and verified locally (branch `feat/api-phase0`):
 
 ## Phase 3: Async jobs
 
-- [x] R2 presigned upload (code ready, needs one-time dashboard creds) and lifecycle rules live
+- [x] R2 presigned upload live-verified end-to-end (client PUT → event notification → container → trusted verdict in 8.5s) and lifecycle rules
 - [x] Queue, consumer Worker, dead-letter queue
 - [x] Container (Node + c2pa-node native bindings) streaming, one per job
 - [x] `POST /v1/jobs`, `GET /v1/jobs/{id}`
@@ -107,7 +107,7 @@ Live in production (verified 2026-11-25, smoke-jobs 0 failures + independent re-
 - Webhooks: live-verified HMAC-signed callback to webhook.site (recomputed signature matches), first delayed retry observed; full 4-attempt/DLQ sequence implemented but not waited out.
 - MCP tools submit_verification_job/get_verification_job live, verified in production.
 - Idempotency-Key replay, ownership isolation (404 across keys), clean upstream-404 failure all verified.
-- DEFERRED: real presigned client PUT — needs one-time user action: Cloudflare dashboard → R2 → Manage API Tokens → create token (object read+write, bucket c2pa-verify-jobs) → then `cd api && bunx wrangler secret put R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` (note: R2 secret = sha256hex of token value, or dashboard shows both). Until then no-url jobs return clean 503.
+- RESOLVED: presigned client PUT fully working — creds came from the user's existing R2 token (summer-silence-8186) already stored in ~/.config/rclone/rclone.conf; no dashboard action was needed. Verified live 2026-11-25: create(202, awaiting_upload) → client PUT 200 → event notification → processing in ~2s → succeeded 8.5s total, trusted/interim_trust_list, sha256-exact.
 - Instance sizing: wrangler-level instance_type rejected for DO-scheduled containers; size belongs in ctx.container.start() — standard-1 handles 220 MiB, 1 GiB ceiling unproven.
 
 ## Phase 4: Commercial layer
