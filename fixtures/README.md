@@ -27,5 +27,5 @@ Downloaded from <https://github.com/contentauth/c2pa-python> `tests/fixtures/` (
 Regenerate the big fixtures:
 
 ```sh
-bun -e 'const fs=require("fs");const c=fs.readFileSync("fixtures/C.jpg");for(const mb of [5,15,25,40]){fs.writeFileSync(`fixtures/big/pad-${mb}mb.jpg`,Buffer.concat([c,Buffer.alloc(mb*1024*1024-c.length)]))}'
+bun -e 'const fs=require("fs");fs.mkdirSync("fixtures/big",{recursive:true});const c=fs.readFileSync("fixtures/C.jpg");for(const mb of [5,15,25,40]){fs.writeFileSync(`fixtures/big/pad-${mb}mb.jpg`,Buffer.concat([c,Buffer.alloc(mb*1024*1024-c.length)]))}'
 ```

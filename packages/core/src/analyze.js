@@ -16,6 +16,35 @@ function toArrayBuffer(bytes) {
     return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
 }
 
+// EXIF orientations 5–8 transpose the image: the displayed dimensions are the
+// encoded ones swapped. Header parsers report encoded dimensions, while the
+// pre-refactor viewer reported what createImageBitmap decoded — and its default
+// imageOrientation is 'from-image', i.e. oriented dimensions. exifr translates
+// Orientation to a string ('Rotate 90 CW') under the current parse options, so
+// accept both the numeric and translated forms.
+const TRANSPOSE_ORIENTATIONS = new Set([5, 6, 7, 8]);
+const EXIFR_ORIENTATION_STRINGS = {
+    'horizontal (normal)': 1,
+    'mirror horizontal': 2,
+    'rotate 180': 3,
+    'mirror vertical': 4,
+    'mirror horizontal and rotate 270 cw': 5,
+    'rotate 90 cw': 6,
+    'mirror horizontal and rotate 90 cw': 7,
+    'rotate 270 cw': 8,
+};
+
+function orientationNumber(value) {
+    if (typeof value === 'number' && Number.isInteger(value)) return value;
+    if (typeof value === 'string') {
+        const mapped = EXIFR_ORIENTATION_STRINGS[value.toLowerCase()];
+        if (mapped !== undefined) return mapped;
+        const n = Number(value);
+        if (Number.isInteger(n)) return n;
+    }
+    return null;
+}
+
 // The per-file EXIF entry (the value inside exifMetadata's {name: entry} map
 // and the shared prefix of uploadMetadata's entry).
 export async function buildExifEntry({ bytes, mime, filename, contentType }) {
@@ -24,8 +53,14 @@ export async function buildExifEntry({ bytes, mime, filename, contentType }) {
 
     const dims = await bytesDimensions(bytes, mime || imageMime(format));
     const exifData = await extractExif(toArrayBuffer(bytes), filename, format, bytes.byteLength);
-    exifData.width = dims.width;
-    exifData.height = dims.height;
+    const orientation = orientationNumber(exifData._rawExif && exifData._rawExif.Orientation);
+    if (orientation && TRANSPOSE_ORIENTATIONS.has(orientation)) {
+        exifData.width = dims.height;
+        exifData.height = dims.width;
+    } else {
+        exifData.width = dims.width;
+        exifData.height = dims.height;
+    }
 
     // IPTC lives in the same exifr parse — extractExif stashes the raw parse.
     const iptcData = extractIptc(exifData._rawExif);
@@ -75,10 +110,10 @@ export async function buildExifEntry({ bytes, mime, filename, contentType }) {
 //   validation — { state, results:{success,informational,failure} } from the
 //                manifest store, or null when no manifest / c2pa not run.
 //                Sibling of c2pa so viewer-facing shapes stay unchanged.
-//   asset      — { sha256, mime, bytes } — content hash + transport facts,
-//                always computed (feeds the public API's asset block).
+//   asset      — { sha256, mime, bytes } — transport facts always present;
+//                sha256 is null when the caller passes assetHash:false.
 //   manifest   — { label } — store.active_manifest label, null when no manifest.
-export async function analyzeBytes({ bytes, mime, filename, contentType, engine, trust, include, trustProfile = 'c2pa_and_itl', strict = false }) {
+export async function analyzeBytes({ bytes, mime, filename, contentType, engine, trust, include, trustProfile = 'c2pa_and_itl', strict = false, assetHash = true }) {
     const inc = include || {};
     const wantExif = inc.exif !== false;
     const wantC2pa = inc.c2pa !== false;
@@ -92,8 +127,12 @@ export async function analyzeBytes({ bytes, mime, filename, contentType, engine,
     };
 
     const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    // The sha256 is a full extra pass over the asset. REST responses and the
+    // async fixture-key enforcement need it; the viewer adapters never surface
+    // it, so viewer callers pass assetHash:false to skip the pass on large
+    // uploads. mime/bytes are transport facts and always reported.
     out.asset = {
-        sha256: await sha256Hex(u8),
+        sha256: assetHash ? await sha256Hex(u8) : null,
         mime: mime || null,
         bytes: u8.byteLength,
     };

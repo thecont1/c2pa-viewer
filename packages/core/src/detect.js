@@ -1,7 +1,13 @@
 // Format detection ported verbatim from src/compute.js (was server.py).
 
 export function detectFormat(bytes, contentType, uri) {
-    const u8 = new Uint8Array(bytes, 0, Math.min(12, bytes.byteLength));
+    // new Uint8Array(typedArray, byteOffset, length) IGNORES the offset/length
+    // arguments and copies the entire input — a 20 MiB asset would be copied
+    // whole just to sniff 12 bytes. subarray shares memory for Uint8Array
+    // inputs; the ArrayBuffer overload does support offset/length.
+    const u8 = bytes instanceof Uint8Array
+        ? bytes.subarray(0, Math.min(12, bytes.byteLength))
+        : new Uint8Array(bytes, 0, Math.min(12, bytes.byteLength));
     if (u8[0] === 0xFF && u8[1] === 0xD8) return 'JPEG';
     if (u8[0] === 0x89 && u8[1] === 0x50 && u8[2] === 0x4E && u8[3] === 0x47) return 'PNG';
     if (u8[0] === 0x47 && u8[1] === 0x49 && u8[2] === 0x46) return 'GIF';

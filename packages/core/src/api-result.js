@@ -100,6 +100,32 @@ function nonEmpty(obj) {
     return obj && typeof obj === 'object' && Object.keys(obj).length > 0;
 }
 
+// strip_gps contract: when true, no GPS data may appear anywhere in the
+// response. raw_manifest carries the full assertion payloads, and a signed
+// asset can embed coordinates inside assertions (an stds.exif assertion's
+// GPS* fields, a schema.org GeoCoordinates, or a custom assertion), so the
+// manifest copy is redacted here. The documented rule: drop every object key
+// — at any depth — whose final namespace component starts with "gps" or is
+// exactly latitude/longitude (case-insensitive). Keys are matched on the
+// part after the last ':' so namespaced forms like exif:GPSLatitude go too.
+function isGpsKey(key) {
+    const final = String(key).split(':').pop().toLowerCase();
+    return final.startsWith('gps') || final === 'latitude' || final === 'longitude';
+}
+
+export function redactGpsDeep(value) {
+    if (Array.isArray(value)) return value.map(redactGpsDeep);
+    if (value && typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) {
+            if (isGpsKey(k)) continue;
+            out[k] = redactGpsDeep(v);
+        }
+        return out;
+    }
+    return value;
+}
+
 export function toApiResult(analysis, { id, engine, include, strip_gps = true } = {}) {
     const c2pa = analysis.c2pa || emptyC2paResult();
     const exifEntry = analysis.exif || null;
@@ -190,7 +216,9 @@ export function toApiResult(analysis, { id, engine, include, strip_gps = true } 
     }
 
     if (inc.has('raw_manifest')) {
-        out.raw_manifest = hasManifest ? c2pa.c2pa_data : null;
+        out.raw_manifest = hasManifest
+            ? (strip_gps ? redactGpsDeep(c2pa.c2pa_data) : c2pa.c2pa_data)
+            : null;
     }
 
     return out;

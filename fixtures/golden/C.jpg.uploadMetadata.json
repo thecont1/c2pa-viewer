@@ -12,8 +12,8 @@
       "social_links": {}
     },
     "digital_source_type": {
-      "code": "digitalCapture",
-      "label": "Digital Camera"
+      "code": "algorithmicMedia",
+      "label": "Algorithmic Media"
     },
     "exif": {},
     "file_size_bytes": 137886,

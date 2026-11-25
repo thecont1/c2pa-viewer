@@ -7,6 +7,7 @@ export const DIGITAL_SOURCE_TYPE_LABELS = {
     'print': 'Print Scan',
     'screenCapture': 'Screen Capture',
     'trainedAlgorithmicMedia': 'Generative AI',
+    'algorithmicMedia': 'Algorithmic Media',
     'algorithmicallyEnhanced': 'AI Enhanced',
     'minorHumanEdits': 'Lightly Edited',
     'compositeCapture': 'Composite (Camera)',
@@ -19,6 +20,36 @@ export const DIGITAL_SOURCE_TYPE_LABELS = {
     'dataDrivenMedia': 'Data-Driven Media',
 };
 
+// Signed digitalSourceType values are usually full IPTC NewsCodes URIs
+// ('http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia'), but
+// some writers emit the bare short code. Normalize to the short code so the
+// label table applies in both cases. Observed in the wild: a leading space
+// inside the URI (C_with_CAWG_data.jpg), hence the trim.
+function normalizeSourceType(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const segment = trimmed.split('/').pop().trim();
+    return segment || null;
+}
+
+function sourceTypeResult(value) {
+    const code = normalizeSourceType(value);
+    if (!code) return null;
+    return [code, DIGITAL_SOURCE_TYPE_LABELS[code] || code];
+}
+
+// c2pa.actions.v2 permits softwareAgent as a generator-info-map object
+// ({name, version}) as well as a plain string. Read whichever shape is
+// present; fall back to '' so the keyword scan never throws.
+function agentName(softwareAgent) {
+    if (typeof softwareAgent === 'string') return softwareAgent;
+    if (softwareAgent && typeof softwareAgent === 'object' && typeof softwareAgent.name === 'string') {
+        return softwareAgent.name;
+    }
+    return '';
+}
+
 export function getDigitalSourceType(c2paData) {
     if (!c2paData) return [null, null];
 
@@ -29,10 +60,23 @@ export function getDigitalSourceType(c2paData) {
         return ['trainedAlgorithmicMedia', 'Generative AI'];
     }
 
+    // Explicit digitalSourceType declared on a signed action (c2pa.actions
+    // v2) is signed, structured evidence and determines the classification;
+    // the keyword heuristics and camera fallback apply only when no action
+    // declares one. The first declaring action wins — c2pa.created is
+    // conventionally first and describes the asset's origin.
+    const scanExplicitSourceType = (actionsList) => {
+        for (const action of actionsList || []) {
+            const hit = sourceTypeResult(action && action.digitalSourceType);
+            if (hit) return hit;
+        }
+        return null;
+    };
+
     const scanActions = (actionsList) => {
         for (const action of actionsList || []) {
             const actionName = (action.action || '').toLowerCase();
-            const softwareAgent = (action.softwareAgent || '').toLowerCase();
+            const softwareAgent = agentName(action.softwareAgent).toLowerCase();
             const parameters = action.parameters || {};
             if (actionName.includes('generative') || actionName.includes('ai')) {
                 return ['trainedAlgorithmicMedia', 'Generative AI'];
@@ -59,14 +103,16 @@ export function getDigitalSourceType(c2paData) {
         const data = assertion.data || {};
         const labelLower = label.toLowerCase();
         if (labelLower.includes('iptc') || labelLower.includes('photo-metadata')) {
-            const st = data.digitalSourceType;
-            if (st) return [st, DIGITAL_SOURCE_TYPE_LABELS[st] || st];
+            const hit = sourceTypeResult(data.digitalSourceType);
+            if (hit) return hit;
         }
         if (label.includes('CreativeWork')) {
-            const st = data.digitalSourceType;
-            if (st) return [st, DIGITAL_SOURCE_TYPE_LABELS[st] || st];
+            const hit = sourceTypeResult(data.digitalSourceType);
+            if (hit) return hit;
         }
         if (labelLower.includes('actions')) {
+            const explicit = scanExplicitSourceType(data.actions);
+            if (explicit) return explicit;
             const hit = scanActions(data.actions);
             if (hit) return hit;
         }

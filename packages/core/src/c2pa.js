@@ -63,12 +63,21 @@ function extractManifestData(store) {
         digital_source_type: null,
     };
 
+    // C2PA actions live in either the c2pa.actions.v2 assertion or the
+    // original unversioned c2pa.actions one. v2 supersedes v1, so when both
+    // are present the v2 assertion wins; otherwise accept whichever exists.
+    const actionAssertions = (manifest.assertions || []).filter(
+        (a) => a && (a.label === 'c2pa.actions.v2' || a.label === 'c2pa.actions')
+    );
+    const v2 = actionAssertions.find((a) => a.label === 'c2pa.actions.v2');
+    const actionsSource = v2 || actionAssertions[0] || null;
+
     for (const assertion of manifest.assertions || []) {
         const label = assertion.label || 'Unknown';
         const assertionData = assertion.data || {};
         result.assertions.push({ label, data: assertionData });
 
-        if (label === 'c2pa.actions.v2') {
+        if (actionsSource && assertion === actionsSource) {
             for (const action of assertionData.actions || []) {
                 result.actions.push({
                     action: action.action ?? null,

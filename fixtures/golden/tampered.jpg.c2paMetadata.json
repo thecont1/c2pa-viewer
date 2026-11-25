@@ -70,8 +70,8 @@
       "title": "C.jpg"
     },
     "digital_source_type": {
-      "code": "digitalCapture",
-      "label": "Digital Camera"
+      "code": "algorithmicMedia",
+      "label": "Algorithmic Media"
     },
     "ingredients": [],
     "signature_info": {
@@ -84,8 +84,8 @@
     "validation_state": "Invalid"
   },
   "digital_source_type": {
-    "code": "digitalCapture",
-    "label": "Digital Camera"
+    "code": "algorithmicMedia",
+    "label": "Algorithmic Media"
   },
   "provenance": [
     {

@@ -9,7 +9,7 @@
 // distinguish trust via the official C2PA Trust List from trust via the
 // frozen Interim Trust List (ITL). Adobe currently signs from the ITL.
 
-export function buildSettings({ c2pa, itl, config }, profile) {
+export function buildSettings({ c2pa, itl, config }, profile, { remoteFetch = true } = {}) {
     const anchors = profile === 'c2pa_and_itl'
         ? `${c2pa || ''}\n${itl || ''}`
         : (c2pa || '');
@@ -19,8 +19,66 @@ export function buildSettings({ c2pa, itl, config }, profile) {
             trust_anchors: anchors,
             trust_config: config || '',
         },
-        verify: { verify_trust: true },
+        verify: { verify_trust: true, remote_manifest_fetch: remoteFetch },
     };
+}
+
+// --- remote-manifest SSRF guard ---------------------------------------------
+// An asset with no embedded store can reference its manifest at an arbitrary
+// remote URL, and the reader fetches it during verification. That URL is
+// attacker-controlled and never passes the isBlockedHost destination check
+// the `url` input path applies — a crafted asset can aim verification-time
+// fetches at loopback, link-local metadata endpoints, or private addresses.
+// The SDK exposes no per-fetch hook, only the per-read remote_manifest_fetch
+// toggle, so the guard scans the asset bytes for URL literals (remote
+// manifest references are plaintext: XMP packets, CBOR box payloads) and
+// disables remote fetching for the read when any of them is a blocked host.
+// Public manifest hosts — e.g. the documented cloud.jpg cai-manifests.adobe.com
+// flow — are unaffected. Namespace constant URLs (ns.adobe.com etc.) are never
+// blocked hosts, so ordinary XMP metadata does not trip the guard.
+import { isBlockedHost } from './ssrf.js';
+
+const urlDecoder = new TextDecoder();
+
+function scanUrlLiterals(bytes, visit) {
+    // Manual scan — regex would require a full latin1 copy of the asset.
+    const n = bytes.byteLength;
+    // URL schemes are case-insensitive; compare lowercase so HTTP:// cannot
+    // slip past the guard.
+    const lc = (c) => (c >= 0x41 && c <= 0x5a ? c + 0x20 : c);
+    let i = 0;
+    while (i < n - 8) {
+        if (lc(bytes[i]) === 0x68) { // 'h'
+            const isHttp = lc(bytes[i + 1]) === 0x74 && lc(bytes[i + 2]) === 0x74 && lc(bytes[i + 3]) === 0x70;
+            const isHttps = isHttp && lc(bytes[i + 4]) === 0x73;
+            const sep = isHttps ? 5 : 4;
+            if (isHttp && bytes[i + sep] === 0x3a && bytes[i + sep + 1] === 0x2f && bytes[i + sep + 2] === 0x2f) {
+                let end = i + sep + 3;
+                while (end < n && end - i < 2083) {
+                    const c = bytes[end];
+                    // URL token ends at whitespace, quotes, angle brackets, controls.
+                    if (c <= 0x20 || c === 0x22 || c === 0x27 || c === 0x3c || c === 0x3e || c === 0x60 || c >= 0x7f) break;
+                    end++;
+                }
+                visit(urlDecoder.decode(bytes.subarray(i, end)));
+                i = end;
+                continue;
+            }
+        }
+        i++;
+    }
+}
+
+export function hasBlockedRemoteUrl(bytes) {
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    let blocked = false;
+    scanUrlLiterals(u8, (literal) => {
+        if (blocked) return;
+        try {
+            if (isBlockedHost(new URL(literal).hostname)) blocked = true;
+        } catch { /* not a parseable URL — the SDK cannot fetch it either */ }
+    });
+    return blocked;
 }
 
 // Metadata block surfaced under result.trust.lists.
@@ -60,7 +118,10 @@ async function disposeQuietly(handle) {
 //       so a signer present only on the Interim Trust List resolves to
 //       { state:'Valid', basis:'none' }.
 export async function readWithTrustProfiles(engine, bytes, mime, anchors, profile = 'c2pa_and_itl') {
-    const first = await engine.read(bytes, mime, buildSettings(anchors, 'c2pa'));
+    // One scan per asset; the toggle applies to every read of these bytes.
+    const remoteFetch = !hasBlockedRemoteUrl(bytes);
+    const opts = { remoteFetch };
+    const first = await engine.read(bytes, mime, buildSettings(anchors, 'c2pa', opts));
     if (!first) {
         return { handle: null, trust: { state: null, basis: null } };
     }
@@ -77,7 +138,15 @@ export async function readWithTrustProfiles(engine, bytes, mime, anchors, profil
     }
 
     if (state1 === 'Valid') {
-        const second = await engine.read(bytes, mime, buildSettings(anchors, 'c2pa_and_itl'));
+        let second;
+        try {
+            second = await engine.read(bytes, mime, buildSettings(anchors, 'c2pa_and_itl', opts));
+        } catch (e) {
+            // The fallback read rejected: readC2paAsset never receives `first`,
+            // so its finally cannot free it — dispose it here before rethrowing.
+            await disposeQuietly(first);
+            throw e;
+        }
         const state2 = second && second.store && second.store.validation_state
             ? second.store.validation_state : null;
         if (state2 === 'Trusted') {

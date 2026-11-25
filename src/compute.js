@@ -107,7 +107,10 @@ function getTrustAnchors() {
     if (!_trustPromise) {
         const base = new URL('vendor/trust/', document.baseURI).href;
         const fetchText = async (name) => {
-            const resp = await fetch(`${base}${name}`);
+            // Bounded wait: a stalled trust-asset request must reject so the
+            // cached promise clears and a later call can retry — otherwise
+            // every C2PA call wedges behind one hung fetch forever.
+            const resp = await fetch(`${base}${name}`, { signal: AbortSignal.timeout(15000) });
             if (!resp.ok) throw new Error(`trust asset ${name}: HTTP ${resp.status}`);
             return resp.text();
         };
@@ -168,6 +171,7 @@ export async function exifMetadata(uri, timeoutMs = 30000) {
     const format = detectFormat(bytes, contentType, uri);
     const mime = imageMime(format);
     const { exif } = await analyzeBytes({
+        assetHash: false,
         bytes, mime, filename: displayName, contentType,
         include: { exif: true, c2pa: false },
     });
@@ -180,6 +184,7 @@ export async function c2paMetadata(uri, timeoutMs = 30000) {
     const mime = imageMime(format);
     const anchors = await getTrustAnchors();
     const { c2pa } = await analyzeBytes({
+        assetHash: false,
         bytes, mime, filename: displayNameForUri(uri), contentType,
         engine: c2paEngine, trust: { anchors }, include: { exif: false, c2pa: true },
     });
@@ -208,6 +213,7 @@ export async function c2paMini(uri, timeoutMs = 15000) {
         const format = detectFormat(image.bytes, image.contentType, uri);
         const mime = imageMime(format);
         const { c2pa } = await analyzeBytes({
+        assetHash: false,
             bytes: image.bytes, mime, filename: displayNameForUri(uri), contentType: image.contentType,
             engine: c2paEngine, trust: { anchors }, include: { exif: false, c2pa: true },
         });
@@ -246,6 +252,7 @@ export async function uploadMetadata(file) {
     const anchors = await getTrustAnchors();
 
     const { exif, c2pa } = await analyzeBytes({
+        assetHash: false,
         bytes, mime, filename: displayName, contentType,
         engine: c2paEngine, trust: { anchors }, include: { exif: true, c2pa: true },
     });

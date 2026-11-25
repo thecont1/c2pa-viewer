@@ -28,8 +28,16 @@ export function isBlockedHost(hostname) {
     // IPv6 literals (hostname keeps its brackets): loopback, unspecified,
     // link-local, ULA, and IPv4-mapped addresses
     if (h.startsWith('[')) {
-        return h === '[::1]' || h === '[::]' || h.startsWith('[::ffff:') ||
-            h.startsWith('[fe80') || h.startsWith('[fc') || h.startsWith('[fd');
+        if (h === '[::1]' || h === '[::]' || h.startsWith('[::ffff:') ||
+            h.startsWith('[fc') || h.startsWith('[fd')) return true;
+        // Link-local unicast is fe80::/10 (RFC 4291): the first hextet ranges
+        // fe80–febf, not just the fe80 prefix literal. Compressed forms can
+        // never start link-local (a leading :: means the first hextet is 0).
+        const firstHextet = h.slice(1).split(':')[0];
+        if (/^[0-9a-f]{1,4}$/.test(firstHextet)) {
+            const n = parseInt(firstHextet, 16);
+            if ((n & 0xffc0) === 0xfe80) return true;
+        }
     }
     return false;
 }
