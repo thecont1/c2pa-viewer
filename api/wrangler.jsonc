@@ -3,6 +3,19 @@
   "name": "c2pa-verify-api",
   "main": "src/index.js",
   "compatibility_date": "2026-11-24",
+  // Custom domain for the public API. The workers.dev route stays enabled as
+  // a fallback during the transition; the zone thecontrarian.in is in this
+  // account (the Pages viewer already uses c2pa.thecontrarian.in).
+  "routes": [
+    {
+      "pattern": "api.c2pa.thecontrarian.in",
+      "custom_domain": true
+    }
+  ],
+  // Keep the workers.dev route alive during the hostname transition — existing
+  // MCP client configs and smoke scripts still point at it. Revisit removal
+  // once the registry listing (Phase 4) publishes the custom domain.
+  "workers_dev": true,
   // agents/mcp/server uses AsyncLocalStorage from node:async_hooks.
   "compatibility_flags": ["nodejs_compat"],
   "rules": [

@@ -48,7 +48,7 @@ Run everything with `bun run test` (golden check + parity + OpenAPI).
 
 ## Phase 1: Sync API MVP
 
-- [ ] `api.` Worker scaffold (Hono, wrangler config, CI deploy)
+- [x] `api.` Worker scaffold (Hono, wrangler config, CI deploy)
 - [x] `POST /v1/verify` accepting multipart, base64 JSON and `url` input
 - [x] SSRF guard and magic-byte MIME sniffing shared with `functions/api/img.js`
 - [x] API keys: format, hashed storage in D1, scopes, rotate and revoke
@@ -110,6 +110,16 @@ Live in production (verified 2026-11-25, smoke-jobs 0 failures + independent re-
 - RESOLVED: presigned client PUT fully working — creds came from the user's existing R2 token (summer-silence-8186) already stored in ~/.config/rclone/rclone.conf; no dashboard action was needed. Verified live 2026-11-25: create(202, awaiting_upload) → client PUT 200 → event notification → processing in ~2s → succeeded 8.5s total, trusted/interim_trust_list, sha256-exact.
 - Instance sizing: wrangler-level instance_type rejected for DO-scheduled containers; size belongs in ctx.container.start() — standard-1 handles 220 MiB, 1 GiB ceiling unproven.
 
+## Phase 3b: Rust container rewrite (decided 2026-11-26)
+
+Full rewrite of the job container in Rust. Exit bar: byte-identical analysis output vs the Node container across the golden corpus, smoke-jobs green, 220 MiB end-to-end re-verified in production.
+
+- [ ] M1 Rust service skeleton: HTTP server on 8080 (health + POST /verify), /tmp spool with 1 GiB cap, timeouts, error-mapping parity (400/413/422/500 semantics)
+- [ ] M2 c2pa-rs extraction: Reader + Context settings mapped from x-c2pa-settings (trust anchors, verify_trust, remote_manifest_fetch), store JSON + resource extraction parity vs c2pa-node
+- [ ] M3 Port c2pa.js transformation + trust.js evaluation (provenance rows, validation buckets, thumbnails)
+- [ ] M4 Port detect/dimensions/exif/IPTC/photo formatting (exifr behavioral parity is the wildcard)
+- [ ] M5 Integration: container image swap, smoke-jobs green, production re-verification, Node container removal
+
 ## Phase 4: Commercial layer
 
 - [ ] Usage metering in D1 and per-key quota Durable Object
@@ -130,6 +140,6 @@ Live in production (verified 2026-11-25, smoke-jobs 0 failures + independent re-
 
 ## Open decisions
 
-- API hostname: `api.c2pa.thecontrarian.in` vs a neutral product domain
-- Container engine: native Rust (preferred) vs Node `c2pa-node`
+- ~~API hostname~~ decided: `api.c2pa.thecontrarian.in` (live since 2026-11-26)
+- ~~Container engine~~ decided: native Rust — full rewrite of the container analysis pipeline in Rust (user decision 2026-11-26, aware that c2pa-node is already Rust-native underneath and that this forks the single-source parity guarantee; implementation tracked below)
 - ~~Sync size cap~~ decided: 20 MiB (see Phase 0 findings)

@@ -6,7 +6,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://c2pa-verify-api.thecontrarian.workers.dev/mcp",
+      "url": "https://api.c2pa.thecontrarian.in/mcp",
       "headers": [
         {
           "name": "Authorization",
