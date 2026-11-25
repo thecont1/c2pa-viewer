@@ -66,3 +66,8 @@ fixtures/big/
 
 # Generated trust-asset copy for local serving (canonical source: trust/)
 vendor/trust/
+
+# local parity-testing symlinks (scripts/parity-container.mjs)
+api/container/core
+api/container/node_modules
+api/container-rs/target

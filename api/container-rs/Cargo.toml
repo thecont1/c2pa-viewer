@@ -1,0 +1,24 @@
+[package]
+name = "c2pa-verify-container"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+c2pa = { version = "=0.92.2", features = ["fetch_remote_manifests", "file_io"] }
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+futures = "0.3"
+tokio-util = "0.7"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+http-body-util = "0.1"
+bytes = "1"
+
+[profile.release]
+lto = true
+strip = true

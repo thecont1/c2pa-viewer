@@ -114,11 +114,22 @@ Live in production (verified 2026-11-25, smoke-jobs 0 failures + independent re-
 
 Full rewrite of the job container in Rust. Exit bar: byte-identical analysis output vs the Node container across the golden corpus, smoke-jobs green, 220 MiB end-to-end re-verified in production.
 
-- [ ] M1 Rust service skeleton: HTTP server on 8080 (health + POST /verify), /tmp spool with 1 GiB cap, timeouts, error-mapping parity (400/413/422/500 semantics)
-- [ ] M2 c2pa-rs extraction: Reader + Context settings mapped from x-c2pa-settings (trust anchors, verify_trust, remote_manifest_fetch), store JSON + resource extraction parity vs c2pa-node
-- [ ] M3 Port c2pa.js transformation + trust.js evaluation (provenance rows, validation buckets, thumbnails)
-- [ ] M4 Port detect/dimensions/exif/IPTC/photo formatting (exifr behavioral parity is the wildcard)
+- [x] M1 Rust service skeleton: HTTP server on 8080 (health + POST /verify), /tmp spool with 1 GiB cap, timeouts, error-mapping parity (400/413/422/500 semantics)
+- [x] M2 c2pa-rs extraction: Reader + Context settings mapped from x-c2pa-settings (trust anchors, verify_trust, remote_manifest_fetch), store JSON + resource extraction parity vs c2pa-node
+- [x] M3 Port c2pa.js transformation + trust.js evaluation (provenance rows, validation buckets, thumbnails)
+- [x] M4 Port detect/dimensions/exif/IPTC/photo formatting (exifr behavioral parity verified on the corpus; PNG/WEBP/GIF EXIF extraction is a documented gap — no corpus coverage)
 - [ ] M5 Integration: container image swap, smoke-jobs green, production re-verification, Node container removal
+
+### Phase 3b progress notes
+
+M1–M4 verified 2026-11-26 (`api/container-rs/`, c2pa crate pinned =0.92.2 — the exact version embedded in production c2pa-node 0.12.1, verified via strings in dist/index.node):
+- **Byte-exact parity on all 7 fixtures** (scripts/parity-container.mjs: capture against Node container on :8080, compare against Rust on :8081) — gps.jpg, DSCF9243.jpg, cloud.jpg, C_with_CAWG_data.jpg, C.jpg, A.jpg, tampered.jpg all MATCH, plus edge probes (garbage→422, empty→422, missing settings→400 identical).
+- Remote manifest resolution works: c2pa crate needs the `fetch_remote_manifests` cargo feature; without it remote manifests hard-error. `Error::JumbfNotFound` maps to the no-manifest path (unsigned assets → 200 empty result, matching c2pa-node).
+- Wire settings format for c2pa 0.92: trust.anchors[] entries with trust_kind/trust_uri/trust_config (the legacy flat trust_anchors field is deprecated) — reverse-engineered from c2pa-utilities resolveSettings/toWireSettings + snakeCaseify.
+- Golden capture caveat: the reference Node container MUST run with TZ=UTC (provenance dates render in runtime-local time; an early capture on a UTC+5:30 workstation contaminated the goldens).
+- Parity harness needs the Node container runnable locally: symlink api/container/core → ../../packages/core and api/container/node_modules → ../../node_modules (gitignored).
+- Known remaining gaps (no corpus coverage): PNG/WEBP/GIF EXIF extraction (parser handles JPEG+TIFF only), ISO timestamps with non-Z offsets render unconverted, exifr revival edge cases not exercised by the corpus. Number-format differences (serde_json 4000.0 vs JS 4000) are irrelevant — the worker parses the JSON before re-serializing.
+- Dockerfile written (rust:1-bookworm build → debian:bookworm-slim runtime) but not yet built or integration-tested — that is M5.
 
 ## Phase 4: Commercial layer
 
