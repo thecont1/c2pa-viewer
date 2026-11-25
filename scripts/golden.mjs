@@ -131,7 +131,13 @@ async function main() {
   console.log(`serving ${ROOT} on ${BASE}`);
 
   const browser = await chromium.launch();
-  const page = await browser.newPage();
+  // Pin the browser timezone: provenance date strings are deliberately formatted
+  // in the runtime-local timezone (correct product behavior — browsers show
+  // user-local time), so byte-exact goldens are only meaningful under one fixed
+  // zone. Goldens were captured in Asia/Kolkata; without this pin the check
+  // fails on any host/CI runner in a different timezone.
+  const context = await browser.newContext({ timezoneId: 'Asia/Kolkata' });
+  const page = await context.newPage();
   page.setDefaultTimeout(120000);
   await page.goto(`${BASE}/index.html`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.C2paApi && typeof window.C2paApi.c2paMetadata === 'function');
