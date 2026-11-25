@@ -26,6 +26,10 @@ const API_DIR = join(ROOT, 'api');
 const WRANGLER = join(ROOT, 'node_modules/.bin/wrangler');
 const BASE = (process.env.C2PA_API_BASE || 'https://c2pa-verify-api.thecontrarian.workers.dev').replace(/\/$/, '');
 const BUCKET = 'c2pa-verify-jobs';
+// The large fixture is served from a DEDICATED bucket whose only contents are
+// test artifacts. Enabling r2.dev on the production jobs bucket (the old flow)
+// exposes uploaded user assets and verification results to anyone with the URL.
+const FIXTURE_BUCKET = 'c2pa-verify-smoke-fixtures';
 const LARGE = join(ROOT, 'fixtures/big/large-signed.jpg');
 const SMALL_URL = 'https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg';
 const NOT_FOUND_URL = 'https://thecontrarian.in/library/originals/GHANA/NO-SUCH-PHASE3-SMOKE.jpg';
@@ -35,6 +39,7 @@ let failures = 0;
 const rows = [];
 const timings = {};
 const createdKeyIds = [];
+const cleanupFailures = [];
 let publicWasEnabled = false;
 let webhookSecret = null;
 let webhookToken = null;
@@ -176,12 +181,27 @@ async function connectMcp(key) {
 
 async function cleanup({ keyA, keyB, largeObjectKey }) {
     // CRITICAL: close the temporary public R2 window no matter how the script exits.
-    try { wrangler(['r2', 'bucket', 'dev-url', 'disable', BUCKET]); } catch { }
+    if (publicWasEnabled) {
+        try { wrangler(['r2', 'bucket', 'dev-url', 'disable', FIXTURE_BUCKET]); } catch { }
+    }
     if (largeObjectKey) {
-        try { wrangler(['r2', 'object', 'delete', `${BUCKET}/${largeObjectKey}`, '--remote']); } catch { }
+        try { wrangler(['r2', 'object', 'delete', `${FIXTURE_BUCKET}/${largeObjectKey}`, '--remote']); } catch { }
     }
     for (const id of createdKeyIds.splice(0)) {
-        try { spawnSync('bun', ['scripts/keyctl.mjs', 'revoke', '--id', id, '--remote'], { cwd: ROOT, encoding: 'utf8' }); } catch { }
+        try {
+            const res = spawnSync('bun', ['scripts/keyctl.mjs', 'revoke', '--id', id, '--remote'], { cwd: ROOT, encoding: 'utf8' });
+            if (res.status !== 0) {
+                // A nonzero revoke leaves the temporary key active remotely:
+                // keep it registered, report loudly, and fail the run.
+                createdKeyIds.push(id);
+                cleanupFailures.push(`keyctl revoke exited ${res.status} for ${id}: ${(res.stderr || res.stdout || '').slice(0, 200)}`);
+                console.error(`CLEANUP FAILURE: revoke failed for ${id} — key may still be active`);
+            }
+        } catch (e) {
+            createdKeyIds.push(id);
+            cleanupFailures.push(`keyctl revoke threw for ${id}: ${e && e.message ? e.message : e}`);
+            console.error(`CLEANUP FAILURE: revoke threw for ${id} — key may still be active`);
+        }
     }
 }
 
@@ -190,17 +210,32 @@ async function main() {
     let keyA = process.env.C2PA_SMOKE_KEY_A || null;
     let keyB = process.env.C2PA_SMOKE_KEY_B || null;
     if (!keyA || !keyB) {
+        // Register each key for cleanup the moment it exists: if the second
+        // creation fails, the first must not be left active remotely.
         const a = keyctl(['create', '--name', `phase3-smoke-${Date.now()}-a`, '--type', 'server', '--tier', 'pro', '--remote']);
+        keyA = a.key; createdKeyIds.push(a.id);
         const b = keyctl(['create', '--name', `phase3-smoke-${Date.now()}-b`, '--type', 'server', '--tier', 'pro', '--remote']);
-        keyA = a.key; keyB = b.key; createdKeyIds.push(a.id, b.id);
+        keyB = b.key; createdKeyIds.push(b.id);
         console.log('created temporary remote smoke keys (will revoke in cleanup)');
     }
 
-    // Rotate the worker webhook signing secret to a random value known only to
-    // this smoke invocation, then use it as the independent HMAC verifier.
-    webhookSecret = createHash('sha256').update(randomUUID() + Date.now()).digest('hex');
-    wrangler(['secret', 'put', 'WEBHOOK_SIGNING_SECRET'], { input: `${webhookSecret}\n` });
-    console.log('rotated WEBHOOK_SIGNING_SECRET for independently verifiable smoke delivery');
+    // `wrangler secret put` deploys immediately and changes the secret for ALL
+    // production jobs — receivers verifying with the previous secret break, and
+    // cleanup cannot restore it (secrets are write-only). When the operator
+    // supplies the currently-configured secret through C2PA_SMOKE_WEBHOOK_SECRET,
+    // no rotation happens at all. Rotation remains the fallback for accounts
+    // with no production webhook receivers yet.
+    if (process.env.C2PA_SMOKE_WEBHOOK_SECRET) {
+        webhookSecret = process.env.C2PA_SMOKE_WEBHOOK_SECRET;
+        console.log('using C2PA_SMOKE_WEBHOOK_SECRET as the HMAC verifier (no production secret rotation)');
+    } else {
+        console.error('WARNING: rotating production WEBHOOK_SIGNING_SECRET for this smoke run —');
+        console.error('in-flight production webhook receivers using the previous secret will fail');
+        console.error('verification. Set C2PA_SMOKE_WEBHOOK_SECRET to the configured secret to avoid this.');
+        webhookSecret = createHash('sha256').update(randomUUID() + Date.now()).digest('hex');
+        wrangler(['secret', 'put', 'WEBHOOK_SIGNING_SECRET'], { input: `${webhookSecret}\n` });
+        console.log('rotated WEBHOOK_SIGNING_SECRET for independently verifiable smoke delivery');
+    }
 
     let largeObjectKey = null;
     const cleanupArgs = { largeObjectKey: null };
@@ -310,10 +345,13 @@ async function main() {
         // object write + URL job creation, then closed in cleanup/finally.
         largeObjectKey = 'public-test/large-signed.jpg';
         cleanupArgs.largeObjectKey = largeObjectKey;
-        wrangler(['r2', 'bucket', 'dev-url', 'enable', BUCKET]);
+        try {
+            wrangler(['r2', 'bucket', 'create', FIXTURE_BUCKET]);
+        } catch { /* already exists */ }
+        wrangler(['r2', 'bucket', 'dev-url', 'enable', FIXTURE_BUCKET]);
         publicWasEnabled = true;
-        wrangler(['r2', 'object', 'put', `${BUCKET}/${largeObjectKey}`, '--file', LARGE, '--content-type', 'image/jpeg', '--remote'], { cwd: API_DIR });
-        const devUrlOut = wrangler(['r2', 'bucket', 'dev-url', 'get', BUCKET]);
+        wrangler(['r2', 'object', 'put', `${FIXTURE_BUCKET}/${largeObjectKey}`, '--file', LARGE, '--content-type', 'image/jpeg', '--remote'], { cwd: API_DIR });
+        const devUrlOut = wrangler(['r2', 'bucket', 'dev-url', 'get', FIXTURE_BUCKET]);
         const publicBase = (devUrlOut.match(/https:\/\/[^\s'']+\.r2\.dev/) || [])[0];
         const largeUrl = `${publicBase}/${largeObjectKey}`;
         const expectedSha = sha256File(LARGE);
@@ -371,7 +409,7 @@ async function main() {
         row(`smoke-jobs harness error: ${e.message}`, false);
     } finally {
         await cleanup(cleanupArgs);
-        const after = wrangler(['r2', 'bucket', 'dev-url', 'get', BUCKET]);
+        const after = wrangler(['r2', 'bucket', 'dev-url', 'get', FIXTURE_BUCKET]);
         row('PUBLIC BUCKET EXPOSURE CLOSED: r2.dev disabled after smoke',
             /disabled/i.test(after),
             after.trim().split('\n').pop());
@@ -379,7 +417,8 @@ async function main() {
 
     console.log('\n== smoke-jobs summary ==');
     console.log(JSON.stringify({ failures, timings, rows }, null, 2));
-    process.exit(failures ? 1 : 0);
+    for (const cf of cleanupFailures) console.log(`FAIL  cleanup — ${cf}`);
+    process.exit((failures + cleanupFailures.length) ? 1 : 0);
 }
 
 main();

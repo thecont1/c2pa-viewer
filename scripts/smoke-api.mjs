@@ -15,6 +15,7 @@
 // printing pass/fail per row and exiting nonzero on any failure.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { redactGpsDeep } from '../packages/core/src/api-result.js';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -139,7 +140,9 @@ async function req(method, url, { key, body, headers = {}, form } = {}) {
     if (key) h['authorization'] = `Bearer ${key}`;
     let payload = body;
     if (form) payload = form;
-    const resp = await fetch(url, { method, headers: h, body: payload });
+    // Bound every matrix request: a worker that passes health but never
+    // completes a response must not hang the matrix out of its cleanup path.
+    const resp = await fetch(url, { method, headers: h, body: payload, signal: AbortSignal.timeout(30000) });
     const text = await resp.text();
     let json = null;
     try { json = JSON.parse(text); } catch { }
@@ -287,16 +290,48 @@ async function main() {
         }
 
         // -- 4a. base64 upload of 20MiB+1 → 413 ----------------------------
+        // The wire body here is ~28 MiB base64 — UNDER the 28 MiB raw cap — so
+        // the 413 must come from the decoded-size check, not the transport cap.
         {
             const big = Buffer.alloc(MAX_SYNC_BYTES + 1, 7);
+            const wireBytes = JSON.stringify({ data: big.toString('base64'), mime: 'image/jpeg' }).length;
             const r = await req('POST', `${BASE_A}/v1/verify`, {
                 key: server.key,
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ data: big.toString('base64'), mime: 'image/jpeg' }),
             });
             row('base64 upload of 20MiB+1 → 413 payload_too_large + max_sync_bytes',
-                r.status === 413 && problemShape(r.json, 'payload_too_large') && r.json.max_sync_bytes === MAX_SYNC_BYTES,
-                `status=${r.status} code=${r.json && r.json.code} max=${r.json && r.json.max_sync_bytes}`);
+                r.status === 413 && problemShape(r.json, 'payload_too_large') && r.json.max_sync_bytes === MAX_SYNC_BYTES
+                && wireBytes <= 28 * 1024 * 1024,
+                `status=${r.status} code=${r.json && r.json.code} wire=${wireBytes}`);
+        }
+
+        // -- 4a-ii. exactly-at-cap 20 MiB asset IS accepted end-to-end --------
+        // The contract caps the DECODED asset at 20 MiB — an exactly-at-cap
+        // upload must verify (any verdict), through both transports.
+        {
+            const big = Buffer.concat([C, Buffer.alloc(MAX_SYNC_BYTES - C.length)]);
+            const r = await req('POST', `${BASE_A}/v1/verify`, {
+                key: server.key,
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ data: big.toString('base64'), mime: 'image/jpeg' }),
+            });
+            row('base64 exactly 20 MiB at-cap asset → 200 (accepted, not 413)',
+                r.status === 200,
+                `status=${r.status} verdict=${r.json && r.json.status}`);
+        }
+
+        // -- 4a-iii. raw body over the 28 MiB transport cap → 413 -------------
+        {
+            const huge = Buffer.alloc(21 * 1024 * 1024, 3); // base64 ≈ 29.4 MB on the wire
+            const r = await req('POST', `${BASE_A}/v1/verify`, {
+                key: server.key,
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ data: huge.toString('base64'), mime: 'image/jpeg' }),
+            });
+            row('raw body over the 28 MiB transport cap → 413 payload_too_large',
+                r.status === 413 && problemShape(r.json, 'payload_too_large'),
+                `status=${r.status} code=${r.json && r.json.code}`);
         }
 
         // -- 4b. multipart post-decode 20MiB+1 → 413 (bonus: exercises the
@@ -416,16 +451,26 @@ async function main() {
                 key: quota.key,
                 form: multipart(C, 'C.jpg', 'image/jpeg'),
             });
-            await sleep(1500); // let the waitUntil usage increment land
-            const r2 = await req('POST', `${BASE_A}/v1/verify`, {
-                key: quota.key,
-                form: multipart(C, 'C.jpg', 'image/jpeg'),
-            });
+            // The usage increment lands off the response path (waitUntil), so a
+            // fixed delay is racy. Poll until the guard flips to 429 — each
+            // additional pre-quota 200 still converges because it increments the
+            // count itself; report a missing write separately from a wrong verdict.
+            let r2 = null;
+            let converged = false;
+            const deadline = Date.now() + 15000;
+            while (Date.now() < deadline) {
+                r2 = await req('POST', `${BASE_A}/v1/verify`, {
+                    key: quota.key,
+                    form: multipart(C, 'C.jpg', 'image/jpeg'),
+                });
+                if (r2.status === 429) { converged = true; break; }
+                await sleep(400);
+            }
             row('quota: first verify at count 499 → 200 (reaches quota)',
                 r1.status === 200, `status=${r1.status}`);
-            row('quota: next verify → 429 quota_exceeded',
-                r2.status === 429 && problemShape(r2.json, 'quota_exceeded'),
-                `status=${r2.status} code=${r2.json && r2.json.code}`);
+            row('quota: next verify → 429 quota_exceeded (polled until write landed)',
+                converged && r2 && problemShape(r2.json, 'quota_exceeded'),
+                `converged=${converged} status=${r2 && r2.status} code=${r2 && r2.json && r2.json.code}`);
         }
 
         // -- 9. mini golden shape -------------------------------------------
@@ -518,6 +563,24 @@ async function main() {
                 r1.status === 200 && r1.json && r1.json.lists && r1.json.lists.c2pa && /^[0-9a-f]{64}$/.test(r1.json.lists.c2pa.sha256 || ''),
                 `status=${r1.status}`);
 
+            // Provenance assertion: all three published digests must equal the
+            // sha256 of the bundled trust text — a missing entry or a stale
+            // digest still has 64 hex chars and passes the format check above.
+            {
+                const { createHash } = await import('node:crypto');
+                const digest = (f) => createHash('sha256').update(readFileSync(join(ROOT, 'trust', f), 'utf8')).digest('hex');
+                const lists = r1.json && r1.json.lists ? r1.json.lists : {};
+                const pairs = [
+                    ['c2pa', digest('C2PA-TRUST-LIST.pem'), lists.c2pa && lists.c2pa.sha256],
+                    ['itl', digest('ITL-anchors.pem'), lists.itl && lists.itl.sha256],
+                    ['config', digest('store.cfg'), lists.config && lists.config.sha256],
+                ];
+                const mismatches = pairs.filter(([, local, published]) => local !== published);
+                row('/v1/trust-lists digests match the bundled trust files (c2pa, itl, config)',
+                    mismatches.length === 0,
+                    mismatches.map(([n, l, p]) => `${n}: local=${String(l).slice(0, 12)} published=${String(p).slice(0, 12)}`).join(' '));
+            }
+
             const r2 = await req('GET', `${BASE_A}/v1/openapi.json`);
             row('/v1/openapi.json → valid JSON, openapi 3.1.x',
                 r2.status === 200 && r2.json && typeof r2.json.openapi === 'string' && r2.json.openapi.startsWith('3.1'),
@@ -566,6 +629,28 @@ async function main() {
             row('test key + non-corpus asset → 403 fixture-corpus detail',
                 r2.status === 403 && problemShape(r2.json, 'forbidden') && /fixture corpus/.test(r2.json.detail || ''),
                 `status=${r2.status} detail=${r2.json && r2.json.detail}`);
+        }
+
+        // -- 14b. strip_gps raw_manifest redaction rule (pure-logic unit row) ----
+        // No signed fixture embeds GPS in its assertions, so the recursive
+        // redaction is verified directly on a synthetic manifest shape.
+        {
+            const synthetic = {
+                assertions: [
+                    { label: 'stds.exif', data: { 'exif:Make': 'Canon', 'exif:GPSLatitude': 12.97, 'exif:GPSLongitude': 77.59 } },
+                    { label: 'stds.schema-org.CreativeWork', data: { contentLocation: { latitude: 12.97, longitude: 77.59, name: 'place' } } },
+                ],
+                basic_info: { claim_generator: 'x' },
+            };
+            const redacted = redactGpsDeep(synthetic);
+            const flat = JSON.stringify(redacted);
+            row('strip_gps redaction: GPS keys dropped at any depth, non-GPS kept',
+                !flat.includes('GPSLatitude') && !flat.includes('12.97') && !flat.includes('77.59')
+                && redacted.assertions[0].data['exif:Make'] === 'Canon'
+                && redacted.assertions[1].data.contentLocation.name === 'place'
+                && !('latitude' in redacted.assertions[1].data.contentLocation)
+                && flat.includes('Canon'),
+                `redacted=${flat.slice(0, 140)}`);
         }
 
         // -- 15. rate limit headers present on success, redundant double-check --

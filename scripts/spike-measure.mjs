@@ -207,10 +207,10 @@ function killTree(child) {
           child.kill('SIGKILL');
         } catch {}
       }
-      // Fallback for stragglers whose cmdline references this spike.
+      // Fallback for stragglers, scoped to this run's exact port only — a broad
+      // 'api/spike' pattern would match other checkouts or concurrent sessions.
       try {
         execSync(`pkill -f "wrangler dev --local --port=${PORT}" 2>/dev/null || true`);
-        execSync(`pkill -f "api/spike" 2>/dev/null || true`);
       } catch {}
       resolveKill();
     }, 1200);
@@ -242,9 +242,12 @@ async function runLocal() {
     const ok = await waitForHealth(LOCAL_URL);
     if (!ok) {
       console.error('wrangler dev failed to become healthy. Log tail:\n' + getLog().slice(-3000));
-      killTree(child);
+      await killTree(child);
       process.exit(1);
     }
+    // Every exit from the measurement body — including a throwing loadFixture —
+    // must still tear down the detached worker, or it keeps holding the port.
+    try {
     // let the runtime settle, then record idle RSS
     await new Promise((r) => setTimeout(r, 1000));
     const idleRssKb = await totalWorkerdRssKb();
@@ -304,7 +307,9 @@ async function runLocal() {
     }
 
     runs.push({ run: run + 1, idle_rss_mb: +(idleRssKb / 1024).toFixed(1), workerd_pids: pids, requests, pad_repeats: padRepeats });
-    await killTree(child);
+    } finally {
+      await killTree(child);
+    }
     // ensure port freed before next run
     await new Promise((r) => setTimeout(r, 1500));
   }

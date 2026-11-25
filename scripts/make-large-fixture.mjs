@@ -65,6 +65,10 @@ async function main() {
     }
     verifyPinnedCerts();
 
+    const sourceBytes = statSync(source).size;
+    if (args.bytes < sourceBytes) {
+        throw new Error(`--bytes ${args.bytes} is smaller than the source (${sourceBytes} bytes) — truncation would corrupt the JPEG, not pad it`);
+    }
     console.log(`padding ${source} to ${args.bytes} bytes before signing`);
     copyFileSync(source, padded);
     truncateSync(padded, args.bytes);
@@ -89,20 +93,24 @@ async function main() {
         'es256',
     );
 
-    console.log('signing padded asset with c2pa-node 0.12.1 test credential');
-    const t0 = Date.now();
-    builder.sign(signer, { path: padded, mimeType: 'image/jpeg' }, { path: out });
-    console.log(`signed in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    try {
+        console.log('signing padded asset with c2pa-node 0.12.1 test credential');
+        const t0 = Date.now();
+        builder.sign(signer, { path: padded, mimeType: 'image/jpeg' }, { path: out });
+        console.log(`signed in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
-    const reader = await Reader.fromAsset({ path: out, mimeType: 'image/jpeg' });
-    if (!reader) throw new Error('signed output did not yield a C2PA reader');
-    const store = reader.json();
-    const failures = store.validation_status || [];
-    console.log(`output: ${out}`);
-    console.log(`size_bytes: ${statSync(out).size}`);
-    console.log(`sha256: ${sha256File(out)}`);
-    console.log(`validation_status: ${JSON.stringify(failures)}`);
-    try { await import('node:fs/promises').then((fs) => fs.rm(padded, { force: true })); } catch { }
+        const reader = await Reader.fromAsset({ path: out, mimeType: 'image/jpeg' });
+        if (!reader) throw new Error('signed output did not yield a C2PA reader');
+        const store = reader.json();
+        const failures = store.validation_status || [];
+        console.log(`output: ${out}`);
+        console.log(`size_bytes: ${statSync(out).size}`);
+        console.log(`sha256: ${sha256File(out)}`);
+        console.log(`validation_status: ${JSON.stringify(failures)}`);
+    } finally {
+        // The padded intermediate is large; remove it on failure as well as success.
+        try { await import('node:fs/promises').then((fs) => fs.rm(padded, { force: true })); } catch { }
+    }
 }
 
 main().catch((e) => { console.error(e && e.stack ? e.stack : e); process.exit(1); });

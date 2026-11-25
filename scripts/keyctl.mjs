@@ -95,8 +95,11 @@ async function create(args) {
 
     let quota;
     if (args.quota !== undefined) {
-        quota = parseInt(args.quota, 10);
-        if (!Number.isFinite(quota) || quota < 0) die('--quota must be a non-negative integer');
+        // parseInt silently truncates junk ('0.5' -> 0, '500junk' -> 500);
+        // require a complete non-negative integer representation first.
+        if (!/^\d+$/.test(String(args.quota).trim())) die('--quota must be a non-negative integer');
+        quota = Number(String(args.quota).trim());
+        if (!Number.isSafeInteger(quota)) die('--quota must be a non-negative integer');
     } else {
         quota = tier === 'free' ? 500 : null; // NULL = unlimited
     }

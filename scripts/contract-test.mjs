@@ -251,6 +251,20 @@ function startFixtureServer(port) {
             if (url.pathname === '/fail500') {
                 return new Response('fixture upstream failure', { status: 500 });
             }
+            if (url.pathname === '/too-big.jpg') {
+                // 20 MiB + 1 of JPEG-headed bytes: over the sync cap, so the
+                // gateway must reject with payload_too_large. Cached in the
+                // server closure so the buffer is built once per test run.
+                if (!startFixtureServer.tooBig) {
+                    const c = readFileSync(join(FIXTURES, 'C.jpg'));
+                    startFixtureServer.tooBig = Buffer.concat([c, Buffer.alloc(20 * 1024 * 1024 + 1 - c.length)]);
+                }
+                return new Response(startFixtureServer.tooBig, { headers: { 'content-type': 'image/jpeg' } });
+            }
+            if (url.pathname === '/not-image') {
+                // Neither a supported content type nor image evidence in the bytes.
+                return new Response('this is plain text, not an image', { headers: { 'content-type': 'text/plain' } });
+            }
             const name = decodeURIComponent(url.pathname.replace(/^\//, ''));
             if (!/^[A-Za-z0-9_.-]+$/.test(name)) return new Response('nope', { status: 404 });
             try {
@@ -344,13 +358,23 @@ async function validateSuccessResponses(base, keys, upstreamPort) {
             key: keys.server.key,
         }),
         createJob: async () => {
-            const r = await req('POST', `${base}/v1/jobs`, {
+            // Integer-like object keys iterate numerically, so the success walk
+            // picks the documented 200 (same-key replay) before the 202. Drive
+            // both: create once with a fresh idempotency key, then repeat the
+            // exact request — the second response is the replay the walk
+            // validates — and assert the first creation really was 202.
+            const idem = `contract-${Date.now()}`;
+            const init = {
                 key: keys.server.key,
-                headers: { 'content-type': 'application/json' },
+                headers: { 'content-type': 'application/json', 'idempotency-key': idem },
                 body: JSON.stringify({ filename: 'contract-upload.jpg', mime: 'image/jpeg', size_bytes: 3 }),
-            });
-            if (r.json && r.json.job_id) contractJobId = r.json.job_id;
-            return r;
+            };
+            const first = await req('POST', `${base}/v1/jobs`, init);
+            row('createJob: first submission with fresh idempotency key → 202',
+                first.status === 202, `status=${first.status}`);
+            if (first.json && first.json.job_id) contractJobId = first.json.job_id;
+            const replayInit = { ...init, headers: { ...init.headers } };
+            return req('POST', `${base}/v1/jobs`, replayInit);
         },
         getJob: () => req('GET', `${base}/v1/jobs/${contractJobId || 'job_missing'}`, { key: keys.server.key }),
         getTrustLists: () => req('GET', `${base}/v1/trust-lists`),
@@ -429,6 +453,11 @@ async function reproduceErrors(base, keys, upstreamPort) {
         headers: { 'content-type': 'text/plain' },
         body: 'hello',
     }));
+
+    // mini 413/415 — same endpoint input failures through the url input path:
+    // an upstream asset over the sync cap, and one that is not an image at all.
+    put('verifyMini', 413, await req('GET', `${base}/v1/verify/mini?url=${encodeURIComponent(`http://127.0.0.1:${upstreamPort}/too-big.jpg`)}`, { key: keys.server.key }));
+    put('verifyMini', 415, await req('GET', `${base}/v1/verify/mini?url=${encodeURIComponent(`http://127.0.0.1:${upstreamPort}/not-image`)}`, { key: keys.server.key }));
 
     // 422 invalid_request — well-formed requests that cannot be processed.
     put('verifyAsset', 422, await req('POST', `${base}/v1/verify?include=exif,bogus`, {
