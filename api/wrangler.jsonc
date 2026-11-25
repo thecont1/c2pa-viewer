@@ -3,6 +3,8 @@
   "name": "c2pa-verify-api",
   "main": "src/index.js",
   "compatibility_date": "2026-11-24",
+  // agents/mcp/server uses AsyncLocalStorage from node:async_hooks.
+  "compatibility_flags": ["nodejs_compat"],
   "rules": [
     {
       "type": "CompiledWasm",

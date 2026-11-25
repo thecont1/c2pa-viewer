@@ -24,9 +24,12 @@ const INCLUDE_ALLOWED = new Set(['exif', 'iptc', 'gps', 'thumbnails', 'raw_manif
 
 // ---------------------------------------------------------------- options --
 
-function parseInclude(raw) {
+export function parseInclude(raw) {
     if (raw === undefined || raw === null || raw === '') return ['exif', 'iptc'];
-    const list = String(raw).split(',').map((s) => s.trim()).filter(Boolean);
+    // REST accepts a comma-separated string; MCP supplies an array enum.
+    const list = Array.isArray(raw)
+        ? raw.map((s) => String(s).trim()).filter(Boolean)
+        : String(raw).split(',').map((s) => s.trim()).filter(Boolean);
     for (const item of list) {
         if (!INCLUDE_ALLOWED.has(item)) {
             throw new ApiError('invalid', `unknown include section: ${item}`);
@@ -35,13 +38,13 @@ function parseInclude(raw) {
     return list.length ? list : ['exif', 'iptc'];
 }
 
-function parseTrust(raw) {
+export function parseTrust(raw) {
     if (raw === undefined || raw === null || raw === '') return 'c2pa_and_itl';
     if (raw === 'c2pa' || raw === 'c2pa_and_itl') return raw;
     throw new ApiError('invalid', `unknown trust profile: ${raw}`);
 }
 
-function parseStripGps(raw) {
+export function parseStripGps(raw) {
     if (raw === undefined || raw === null || raw === '') return true;
     if (raw === true || raw === 1 || raw === '1' || raw === 'true') return true;
     if (raw === false || raw === 0 || raw === '0' || raw === 'false') return false;
@@ -120,7 +123,7 @@ function enforceSize(n) {
     if (n > MAX_SYNC_BYTES) throw new ApiError('too_large', 'asset exceeds the 20 MiB sync cap');
 }
 
-function decodeBase64(data) {
+export function decodeBase64(data) {
     if (typeof data !== 'string' || data.length === 0) {
         throw new ApiError('invalid', 'data must be a non-empty base64 string');
     }
@@ -135,7 +138,7 @@ function decodeBase64(data) {
     return u8;
 }
 
-function displayNameFromUrl(urlString) {
+export function displayNameFromUrl(urlString) {
     try {
         const u = new URL(urlString);
         const seg = u.pathname.split('/').filter(Boolean).pop();
@@ -222,18 +225,27 @@ async function parseVerifyInput(c) {
 
 // --------------------------------------------------------------- metering --
 
-function meter(c, bytes) {
-    const keyRow = c.get('keyRow');
+// Increment monthly verification usage off the response path. Shared by the
+// REST handlers and the MCP verification tools; sandbox keys never bill quota.
+export function meterVerification(env, executionCtx, keyRow, keyKind, bytes) {
     if (!keyRow) return;
-    if (c.get('keyKind') === 'test') return; // sandbox keys never bill quota
+    if (keyKind === 'test') return;
+    if (!executionCtx || typeof executionCtx.waitUntil !== 'function') {
+        console.error('usage increment unavailable: no execution context');
+        return;
+    }
     try {
-        c.executionCtx.waitUntil(
-            incrementUsage(c.env.DB, keyRow.id, currentMonth(), bytes.byteLength)
+        executionCtx.waitUntil(
+            incrementUsage(env.DB, keyRow.id, currentMonth(), bytes.byteLength)
                 .catch((e) => console.error('usage increment failed:', e))
         );
     } catch (e) {
         console.error('usage increment scheduling failed:', e);
     }
+}
+
+function meter(c, bytes) {
+    meterVerification(c.env, c.executionCtx, c.get('keyRow'), c.get('keyKind'), bytes);
 }
 
 function withRateHeaders(res) {
@@ -246,6 +258,8 @@ function withRateHeaders(res) {
 function apiErrorResponse(e) {
     switch (e.kind) {
         case 'too_large': return payloadTooLarge();
+        case 'sandbox':
+            return problem(403, 'forbidden', { detail: e.message });
         case 'unsupported':
         case 'unsupported_ct':
             return problem(415, 'unsupported_media_type', { detail: e.message });
@@ -273,6 +287,76 @@ async function sandboxCheck(c, bytes) {
     return null;
 }
 
+// ---------------------------------------------------------- shared pipeline --
+
+// runVerification — the single strict verification pipeline behind both
+// POST /v1/verify and the MCP verification tools. Input acquisition is the
+// caller's job; everything after byte acquisition (size cap, sandbox gate,
+// MIME resolution, wasm read, API shaping, success metering) lives here so
+// REST and MCP cannot drift apart.
+//
+// Parameters mirror the caller-visible facts:
+//   bytes        exact asset bytes
+//   declaredMime declared content-type / MIME hint (magic bytes still win)
+//   opts         filename, trustAnchors, trust profile, include, strip_gps,
+//                keyKind (test keys are corpus-restricted and unmetered)
+// Returns the public VerifyResult object. Throws ApiError for caller-input
+// failures; engine initialization failures propagate as server errors.
+export async function runVerification(env, executionCtx, keyRow, bytes, declaredMime, opts = {}) {
+    const keyKind = opts.keyKind
+        || (keyRow && typeof keyRow.display_prefix === 'string' && keyRow.display_prefix.startsWith('c2pa_test_') ? 'test' : 'live');
+    const filename = opts.filename || 'image';
+    const trustAnchors = opts.trustAnchors;
+    const trustProfile = parseTrust(opts.trust);
+    const include = parseInclude(opts.include);
+    const stripGps = parseStripGps(opts.strip_gps);
+
+    enforceSize(bytes.byteLength);
+
+    if (keyKind === 'test') {
+        const hash = await sha256Hex(bytes);
+        if (!SANDBOX_SHA256.has(hash)) {
+            throw new ApiError('sandbox', 'test keys only accept the fixture corpus');
+        }
+    }
+
+    const mime = resolveMime(bytes, declaredMime, filename);
+
+    // Engine init failures are server-side. Init here, outside the
+    // reader-failure try, so the two never conflate.
+    await wasmEngine.init();
+
+    let analysis;
+    try {
+        analysis = await analyzeBytes({
+            bytes,
+            mime,
+            filename,
+            contentType: declaredMime,
+            engine: wasmEngine,
+            trust: { anchors: trustAnchors },
+            trustProfile,
+            include: { exif: true, c2pa: true },
+            strict: true, // reader failures on corrupt input -> caller error, not an empty result
+        });
+    } catch (e) {
+        // strict mode only propagates engine READ failures — corrupt or
+        // unparseable asset bytes are the caller's problem, not ours.
+        console.error('reader failure:', e && e.message ? e.message : e);
+        throw new ApiError('invalid', 'the asset could not be read — corrupt or unparseable input');
+    }
+
+    const result = toApiResult(analysis, {
+        id: `ver_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`,
+        engine: ENGINE_INFO,
+        include,
+        strip_gps: stripGps,
+    });
+
+    meterVerification(env, executionCtx, keyRow, keyKind, bytes);
+    return result;
+}
+
 // ---------------------------------------------------------------- handlers --
 
 export async function verifyHandler(c) {
@@ -292,51 +376,21 @@ export async function verifyHandler(c) {
         throw e;
     }
 
-    const forbidden = await sandboxCheck(c, input.bytes);
-    if (forbidden) return forbidden;
-
-    let mime;
+    let result;
     try {
-        mime = resolveMime(input.bytes, input.declaredType, input.filename);
+        result = await runVerification(c.env, c.executionCtx, c.get('keyRow'), input.bytes, input.declaredType, {
+            filename: input.filename,
+            trustAnchors: c.get('trustAnchors'),
+            trust: options.trust,
+            include: options.include,
+            strip_gps: options.strip_gps,
+            keyKind: c.get('keyKind'),
+        });
     } catch (e) {
         if (e instanceof ApiError) return apiErrorResponse(e);
         throw e;
     }
 
-    // Engine init failures are server-side (500 via onError) — init here,
-    // outside the reader-failure try, so the two never conflate.
-    await wasmEngine.init();
-
-    let analysis;
-    try {
-        analysis = await analyzeBytes({
-            bytes: input.bytes,
-            mime,
-            filename: input.filename,
-            contentType: input.declaredType,
-            engine: wasmEngine,
-            trust: { anchors: c.get('trustAnchors') },
-            trustProfile: options.trust,
-            include: { exif: true, c2pa: true },
-            strict: true, // reader failures on corrupt input -> 422, not an empty result
-        });
-    } catch (e) {
-        // strict mode only propagates engine READ failures — corrupt or
-        // unparseable asset bytes are the caller's problem, not ours.
-        console.error('reader failure:', e && e.message ? e.message : e);
-        return problem(422, 'invalid_request', {
-            detail: 'the asset could not be read — corrupt or unparseable input',
-        });
-    }
-
-    const result = toApiResult(analysis, {
-        id: `ver_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`,
-        engine: ENGINE_INFO,
-        include: options.include,
-        strip_gps: options.strip_gps,
-    });
-
-    meter(c, input.bytes);
     return withRateHeaders(Response.json(result));
 }
 

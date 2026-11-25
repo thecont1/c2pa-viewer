@@ -73,11 +73,20 @@ Implemented and verified locally (branch `feat/api-phase0`):
 
 ## Phase 2: MCP
 
-- [ ] `McpAgent` at `/mcp` (Streamable HTTP)
-- [ ] Tools: `verify_image`, `verify_image_detailed`, `submit_verification_job`, `get_verification_job`, `explain_validation_code`
-- [ ] OAuth 2.1 plus bearer API keys
-- [ ] Verified from at least two real MCP clients
-- [ ] Registry and directory listings
+- [x] Stateless MCP server at `/mcp` (Streamable HTTP; createMcpHandler — McpAgent is deprecated upstream)
+- [x] Tools: `verify_image`, `verify_image_detailed`, `explain_validation_code` (+ `list_trust_lists`, resource `trust://current`). `submit_verification_job`/`get_verification_job` deliberately deferred to Phase 3 with the jobs backend
+- [x] Bearer API keys (same D1 keys as REST, metered). OAuth 2.1 deferred to Phase 4: an authorization server is meaningless before customer accounts exist
+- [x] Verified from two real MCP clients: Devin itself (added to ~/.config/devin/mcp_config.json; live verify_image on DSCF9243 → trusted) and MCP Inspector CLI (tools/list + explain_validation_code)
+- [ ] Registry and directory listings — prepared (`api/registry/server.json`) but submission deferred to Phase 4: publishing invites traffic before self-service key signup exists, and the endpoint should move to the custom domain first
+
+
+### Phase 2 progress notes
+
+- `/mcp` live in production inside the gateway worker. Stateless Streamable HTTP via `createMcpHandler` (`@modelcontextprotocol/server` 2.0 + `agents` 0.34.0, zod 4.7 — the >=4.5 Workers-memory-safe line). No Durable Objects; fresh server per request, key row passed via closure.
+- 29-row MCP smoke (`bun run test:mcp`, real `@modelcontextprotocol/sdk` client): full initialize→tools/list→tools/call sequence, schema-validated detailed output, quota+metering parity with REST, 401s for bad keys. `bun run test` runs everything.
+- One input-schema limitation: JSON Schema can't express "exactly one of url/data" — runtime-enforced, clean tool errors.
+- Browser-origin caveat: arbitrary browser Origins get 403 on /mcp preflight by default (fine for agent clients; revisit `allowedOriginHostnames` if browser-based MCP clients matter).
+- Bundle grew to 9.5 MB upload (3.3 MB gzip) — still far under the 64 MiB limit, startup fine.
 
 ## Phase 3: Async jobs
 
