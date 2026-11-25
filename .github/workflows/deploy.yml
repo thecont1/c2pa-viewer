@@ -1,8 +1,10 @@
 # Required GitHub Actions secrets for both deploy jobs:
 #   CLOUDFLARE_API_TOKEN  — Cloudflare API token. Minimum permissions for the
 #                           API worker job: Workers Scripts:Edit, D1:Edit,
-#                           Account:Read. The Pages job uses the same token and
-#                           therefore also needs Cloudflare Pages:Edit.
+#                           Containers:Edit (the worker deploys the
+#                           c2pa-verify-job-runner container image), Account:Read.
+#                           The Pages job uses the same token and therefore also
+#                           needs Cloudflare Pages:Edit.
 #   CLOUDFLARE_ACCOUNT_ID — Cloudflare account ID for the target account.
 # Neither job is marked required in branch protection by this workflow; these
 # are authored as independent deployment jobs so either can fail independently.
