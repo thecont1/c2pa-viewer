@@ -5,15 +5,36 @@
   "type": "module",
   "scripts": {
     "build:compute": "bun build src/compute.js --outfile=c2pa-compute.js --format=iife --global-name=C2paApi --minify",
-    "build": "bun run build:compute && mkdir -p vendor && cp node_modules/@contentauth/c2pa-web/dist/resources/c2pa_bg.wasm vendor/c2pa_bg.wasm",
+    "build": "bun run build:compute && mkdir -p vendor vendor/trust && cp node_modules/@contentauth/c2pa-web/dist/resources/c2pa_bg.wasm vendor/c2pa_bg.wasm && cp trust/C2PA-TRUST-LIST.pem trust/ITL-anchors.pem trust/store.cfg trust/meta.json vendor/trust/",
     "stage": "bash scripts/stage-site.sh",
-    "deploy": "bun run build && bun run stage && wrangler pages deploy .deploy-stage --project-name=c2pa-viewer"
+    "deploy": "bun run build && bun run stage && wrangler pages deploy .deploy-stage --project-name=c2pa-viewer",
+    "test:openapi": "bun scripts/openapi-check.mjs",
+    "test:parity": "bun scripts/parity.mjs",
+    "test": "bun scripts/golden.mjs --check && bun run test:parity && bun run test:openapi && bun run test:contract && bun run test:mcp",
+    "test:api": "bun scripts/smoke-api.mjs",
+    "test:contract": "bun scripts/contract-test.mjs",
+    "test:mcp": "bun scripts/smoke-mcp.mjs",
+    "smoke:jobs": "bun scripts/smoke-jobs.mjs",
+    "test:load": "bun scripts/loadtest.mjs"
   },
   "dependencies": {
     "@contentauth/c2pa-web": "^0.14.3",
-    "exifr": "^7.1.3"
+    "@modelcontextprotocol/server": "2.4.0",
+    "agents": "0.34.0",
+    "aws4fetch": "1.0.20",
+    "exifr": "^7.1.3",
+    "hono": "4.13.21",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "wrangler": "^4.95.0"
+    "@contentauth/c2pa-node": "0.12.1",
+    "@contentauth/c2pa-wasm": "0.11.6",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "piexifjs": "1.0.6",
+    "playwright": "1.61.0",
+    "wrangler": "4.168.0"
   }
 }

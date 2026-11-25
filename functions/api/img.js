@@ -16,32 +16,13 @@ const FETCH_TIMEOUT_MS = 30000;
 // octet-stream so HTML/SVG/scriptable content can't execute same-origin.
 const SAFE_IMAGE_TYPE = /^image\/(jpeg|jpg|png|webp|gif|tiff?|bmp|avif)$/i;
 
-// Basic SSRF guard. Private-range checks apply only to IP literals —
-// DNS names like 10.images.example.org must not match.
-function isBlockedHost(hostname) {
-    const h = hostname.toLowerCase().replace(/\.$/, '');
-    if (h === 'localhost' || h.endsWith('.localhost')) return true;
-    if (h === 'metadata.google.internal') return true;
-
-    // IPv4 literal (URL parser has already normalized exotic forms like
-    // 0x7f000001 or 2130706433 into dotted quads)
-    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
-        const [a, b] = h.split('.').map(Number);
-        return a === 0 || a === 10 || a === 127 ||
-            (a === 172 && b >= 16 && b <= 31) ||
-            (a === 192 && b === 168) ||
-            (a === 169 && b === 254) ||
-            (a === 100 && b >= 64 && b <= 127);
-    }
-
-    // IPv6 literals (hostname keeps its brackets): loopback, unspecified,
-    // link-local, ULA, and IPv4-mapped addresses
-    if (h.startsWith('[')) {
-        return h === '[::1]' || h === '[::]' || h.startsWith('[::ffff:') ||
-            h.startsWith('[fe80') || h.startsWith('[fc') || h.startsWith('[fd');
-    }
-    return false;
-}
+// SSRF guard: canonical implementation lives in packages/core/src/ssrf.js
+// (shared with the c2pa-verify-api Worker). Pages Functions bundle relative
+// imports with esbuild — verified with `wrangler pages dev` — and
+// scripts/stage-site.sh stages packages/core/src/ssrf.js into the deploy tree
+// so this exact relative path resolves there too. Do NOT inline a copy here;
+// the two must never diverge.
+import { isBlockedHost } from '../../packages/core/src/ssrf.js';
 
 function json(data, status) {
     return new Response(JSON.stringify(data), {

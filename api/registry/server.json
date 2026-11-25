@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.thecont1/c2pa-verify",
+  "description": "Verify C2PA provenance in images: validation state, signer trust, metadata",
+  "version": "0.2.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://c2pa-verify-api.thecontrarian.workers.dev/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer API key (c2pa_live_... or c2pa_test_...), see https://c2pa.thecontrarian.in",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

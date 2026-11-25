@@ -1,0 +1,1159 @@
+openapi: 3.1.0
+info:
+  title: C2PA Verify API
+  version: 0.1.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: |
+    Public API for verifying C2PA Content Credentials on image assets.
+
+    **Host is a placeholder.** `https://api.c2pa.thecontrarian.in` is reserved for
+    the production deployment; until then treat every path as relative to this
+    server's `/v1` base.
+
+    Authentication uses bearer API keys (`Authorization: Bearer c2pa_live_…`).
+    `c2pa_test_…` keys run against the sandbox and never bill quota.
+
+    All error responses use `application/problem+json` (RFC 9457) with an
+    additional machine-readable `code` member.
+tags:
+  - name: verify
+    description: Synchronous single-asset verification (≤ 20 MiB).
+  - name: jobs
+    description: Asynchronous verification for larger assets or `url` inputs.
+  - name: trust
+    description: Active trust-list provenance.
+servers:
+  - url: https://api.c2pa.thecontrarian.in/v1
+    description: Production (placeholder host)
+security:
+  - bearerAuth: []
+paths:
+  /verify:
+    post:
+      tags: [verify]
+      summary: Verify one image asset
+      description: |
+        Runs the full C2PA + EXIF pipeline and returns a `VerifyResult`.
+        Synchronous only — request bodies are capped at 20 MiB
+        (`max_sync_bytes`); larger assets must go through `POST /jobs`.
+
+        Input is either `multipart/form-data` (`file`), or `application/json`
+        with exactly one of `data` (base64) or `url`. Options may be supplied
+        as query parameters or, for JSON bodies, as body fields; query wins.
+      operationId: verifyAsset
+      parameters:
+        - $ref: '#/components/parameters/Include'
+        - $ref: '#/components/parameters/Trust'
+        - $ref: '#/components/parameters/StripGps'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file (JPEG/PNG/GIF/WebP).
+                include:
+                  type: string
+                  description: Comma-separated section list (see `include` param).
+                trust:
+                  type: string
+                  enum: [c2pa, c2pa_and_itl]
+                strip_gps:
+                  type: boolean
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [data]
+                  properties:
+                    data:
+                      type: string
+                      description: Base64-encoded image bytes.
+                    mime:
+                      type: string
+                      description: MIME type of `data` (e.g. `image/jpeg`).
+                    filename:
+                      type: string
+                    include:
+                      type: string
+                    trust:
+                      type: string
+                      enum: [c2pa, c2pa_and_itl]
+                    strip_gps:
+                      type: boolean
+                  # Exactly one input: any presence of a `url` key — even a
+                  # null value — is rejected in the data branch.
+                  not:
+                    required: [url]
+                    # Declared only so schema linters can resolve the required
+                    # key above; meaningless inside `not`.
+                    properties:
+                      url: { type: 'null' }
+                - type: object
+                  required: [url]
+                  properties:
+                    url:
+                      type: string
+                      format: uri
+                      description: Public http(s) URL of the image.
+                    filename:
+                      type: string
+                    mime:
+                      type: string
+                    include:
+                      type: string
+                    trust:
+                      type: string
+                      enum: [c2pa, c2pa_and_itl]
+                    strip_gps:
+                      type: boolean
+                  # Exactly one input: any presence of a `data` key — even a
+                  # null value — is rejected in the url branch.
+                  not:
+                    required: [data]
+                    # Declared only so schema linters can resolve the required
+                    # key above; meaningless inside `not`.
+                    properties:
+                      data: { type: 'null' }
+      responses:
+        '200':
+          description: Verification result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyResult'
+              examples:
+                valid_untrusted:
+                  summary: C.jpg — valid signature, signer not on a trust list
+                  # Real toApiResult output for fixtures/C.jpg (engine
+                  # c2pa-wasm 0.11.6, trust lists as of 2026-11-24).
+                  value:
+                    id: ver_b0bd686b-4bff-4df1-820e-5cf20c11457d
+                    engine:
+                      name: c2pa-wasm
+                      version: "0.11.6"
+                      trust_lists:
+                        c2pa:
+                          commit: 285d98e4b575198180c1d6404a7ee1a317e04911
+                          date: "2026-11-20T18:47:23Z"
+                        itl:
+                          fetched_at: "2026-11-24T21:27:29.826Z"
+                    status: valid_untrusted
+                    trust:
+                      basis: none
+                    validation:
+                      state: Valid
+                      success:
+                        - code: timeStamp.validated
+                          explanation: "timestamp message digest matched: DigiCert Timestamp 2023"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.signature"
+                        - code: timeStamp.trusted
+                          explanation: "timestamp cert trusted: DigiCert Timestamp 2023"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.signature"
+                        - code: claimSignature.insideValidity
+                          explanation: "claim signature valid"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.signature"
+                        - code: claimSignature.validated
+                          explanation: "claim signature valid"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.signature"
+                        - code: assertion.hashedURI.match
+                          explanation: "hashed uri matched: self#jumbf=c2pa.assertions/c2pa.thumbnail.claim.jpeg"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.assertions/c2pa.thumbnail.claim.jpeg"
+                        - code: assertion.hashedURI.match
+                          explanation: "hashed uri matched: self#jumbf=c2pa.assertions/stds.schema-org.CreativeWork"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.assertions/stds.schema-org.CreativeWork"
+                        - code: assertion.hashedURI.match
+                          explanation: "hashed uri matched: self#jumbf=c2pa.assertions/c2pa.actions"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.assertions/c2pa.actions"
+                        - code: assertion.hashedURI.match
+                          explanation: "hashed uri matched: self#jumbf=c2pa.assertions/c2pa.hash.data"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.assertions/c2pa.hash.data"
+                        - code: assertion.dataHash.match
+                          explanation: "data hash valid"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.assertions/c2pa.hash.data"
+                      informational: []
+                      failure:
+                        - code: signingCredential.untrusted
+                          explanation: "signing certificate untrusted"
+                          url: "self#jumbf=/c2pa/contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e/c2pa.signature"
+                    active_manifest:
+                      label: contentauth:urn:uuid:c85a2b90-f1a0-4aa4-b17f-f938b475804e
+                      claim_generator: make_test_images/0.26.0 c2pa-rs/0.26.0
+                      signer:
+                        issuer: C2PA Test Signing Cert
+                        common_name: C2PA Signer
+                        serial_number: "720724073027128164015125666832722375746636448153"
+                        signed_at: "2023-09-29T17:40:14+00:00"
+                      digital_source_type:
+                        code: algorithmicMedia
+                        label: Algorithmic Media
+                      author:
+                        "@context": http://schema.org/
+                        "@type": CreativeWork
+                        author:
+                          - "@type": Person
+                            name: Adobe make_test
+                        social_links: {}
+                      actions:
+                        - action: c2pa.created
+                          when: null
+                          softwareAgent: Make Test Images 0.26.0
+                          parameters:
+                            name: gradient
+                      ingredients: []
+                    provenance:
+                      - name: Claim Generator
+                        generator: Make Test Images 0.26.0 c2pa-rs
+                      - name: Issued By
+                        issuer: C2PA Test Signing Cert
+                      - name: Issued On
+                        date: Sep 29, 2023 at 5:40 PM UTC
+                      - name: Author
+                        author: Adobe make_test
+                        author_details:
+                          name: Adobe make_test
+                          identifier: null
+                          url: null
+                          sameAs: []
+                          email: null
+                          telephone: null
+                          address: null
+                          jobTitle: null
+                          worksFor: null
+                          social_links: {}
+                      - name: Action
+                        action: c2pa.created
+                        software: Make Test Images 0.26.0
+                        parameters:
+                          name: gradient
+                      - name: Signer Trust
+                        trust: Signer not on a trust list
+                      - name: Verification
+                        verification: Signature Valid
+                    metadata:
+                      exif: {}
+                      iptc: {}
+                      dimensions:
+                        width: 2048
+                        height: 1365
+                    asset:
+                      sha256: 4cbac1af485155f878d12a610da851c2938f2ce886189c61d9da7a0a43bd00b5
+                      mime: image/jpeg
+                      bytes: 137886
+                      width: 2048
+                      height: 1365
+                trusted:
+                  summary: DSCF9243.jpg — trusted via the Interim Trust List
+                  # Real toApiResult output for fixtures/DSCF9243.jpg, trimmed
+                  # ONLY by array-length truncation: validation.success 12->3,
+                  # active_manifest.actions 20->2, active_manifest.author
+                  # .author 4->2 persons and .social_links 3->2 entries,
+                  # provenance 26->7 (first 5, last 2). All scalar values are
+                  # verbatim.
+                  value:
+                    id: ver_9c1f0e2a-7d3b-4e5f-8a6c-2b1d0e9f8a7c
+                    engine:
+                      name: c2pa-wasm
+                      version: "0.11.6"
+                      trust_lists:
+                        c2pa:
+                          commit: 285d98e4b575198180c1d6404a7ee1a317e04911
+                          date: "2026-11-20T18:47:23Z"
+                        itl:
+                          fetched_at: "2026-11-24T21:27:29.826Z"
+                    status: trusted
+                    trust:
+                      basis: interim_trust_list
+                    validation:
+                      state: Trusted
+                      success:
+                        - code: timeStamp.validated
+                          explanation: "timestamp message digest matched: Adobe SHA256 ECC256 Timestamp Responder 2025 1"
+                          url: "self#jumbf=/c2pa/urn:uuid:f922a70f-13ad-4707-bbd9-b6c56adbfca8/c2pa.signature"
+                        - code: timeStamp.trusted
+                          explanation: "timestamp cert trusted: Adobe SHA256 ECC256 Timestamp Responder 2025 1"
+                          url: "self#jumbf=/c2pa/urn:uuid:f922a70f-13ad-4707-bbd9-b6c56adbfca8/c2pa.signature"
+                        - code: signingCredential.trusted
+                          explanation: "signing certificate trusted, found in System trust anchors"
+                          url: "self#jumbf=/c2pa/urn:uuid:f922a70f-13ad-4707-bbd9-b6c56adbfca8/c2pa.signature"
+                      informational: []
+                      failure: []
+                    active_manifest:
+                      label: urn:uuid:f922a70f-13ad-4707-bbd9-b6c56adbfca8
+                      claim_generator: lightroom_classic/15.1
+                      signer:
+                        issuer: Adobe Inc.
+                        common_name: Adobe C2PA
+                        serial_number: "419323736054358557205556576293173262079519360989"
+                        signed_at: "2026-01-06T10:48:19+00:00"
+                      digital_source_type:
+                        code: digitalCapture
+                        label: Digital Camera (RAW)
+                      author:
+                        "@context": https://schema.org
+                        "@type": CreativeWork
+                        author:
+                          - "@type": Person
+                            name: Mahesh Shantaram
+                          - "@id": https://www.instagram.com/thesquarerootofindia
+                            name: thesquarerootofindia
+                            "@type": Person
+                        social_links:
+                          instagram: https://www.instagram.com/thesquarerootofindia
+                          twitter: https://twitter.com/thecontrarian
+                      actions:
+                        - action: c2pa.opened
+                          when: null
+                          softwareAgent: null
+                          parameters:
+                            ingredients:
+                              - url: "self#jumbf=c2pa.assertions/c2pa.ingredient.v2"
+                                hash: [243, 83, 85, 173, 203, 160, 235, 36, 87, 55, 28, 199, 131, 61, 184, 55, 206, 110, 189, 136, 4, 49, 167, 215, 240, 246, 222, 29, 189, 223, 182, 97]
+                        - action: c2pa.color_adjustments
+                          when: null
+                          softwareAgent: null
+                          parameters:
+                            com.adobe.acr.value: "-40"
+                            com.adobe.acr: Clarity2012
+                      ingredients:
+                        - title: 899412F6-A744-46F4-98A8-D424404185A8.dng
+                          format: image/x-adobe-dng
+                          relationship: parentOf
+                          instance_id: "xmp.iid:b7245b59-d893-4e85-9074-53077490879e"
+                    provenance:
+                      - name: Claim Generator
+                        generator: Lightroom Classic 15.1
+                      - name: Issued By
+                        issuer: Adobe Inc.
+                      - name: Issued On
+                        date: Jan 06, 2026 at 10:48 AM UTC
+                      - name: Author
+                        author: Mahesh Shantaram
+                        author_details:
+                          name: Mahesh Shantaram
+                          identifier: null
+                          url: null
+                          sameAs: []
+                          email: null
+                          telephone: null
+                          address: null
+                          jobTitle: null
+                          worksFor: null
+                          social_links:
+                            instagram: https://www.instagram.com/thesquarerootofindia
+                            twitter: https://twitter.com/thecontrarian
+                            linkedin: https://www.linkedin.com/profile-thirdparty-redirect/AgHJTplKOQZBvQAAAZtvw-MF7ULf6FW7HqB838zRA2xQBeEO-_x9fAXvhuYlLJoawyGzeZkJRsbsdMgow0n_gBZFUHNXEgLVDttkgSy74lvZCpOTOn0oq1QzfTKrt3A
+                      - name: Action
+                        action: c2pa.opened
+                        software: null
+                        parameters:
+                          ingredients:
+                            - url: "self#jumbf=c2pa.assertions/c2pa.ingredient.v2"
+                              hash: [243, 83, 85, 173, 203, 160, 235, 36, 87, 55, 28, 199, 131, 61, 184, 55, 206, 110, 189, 136, 4, 49, 167, 215, 240, 246, 222, 29, 189, 223, 182, 97]
+                      - name: Signer Trust
+                        trust: Trusted — Interim Trust List (legacy)
+                      - name: Verification
+                        verification: Signature Valid
+                    metadata:
+                      exif:
+                        Make: FUJIFILM
+                        Model: GFX 50S
+                        XResolution: 300
+                        YResolution: 300
+                        Software: Adobe Photoshop Lightroom Classic 15.1 (Macintosh)
+                        DateTime: "2026:01:06 16:18:19"
+                        Artist: MAHESH SHANTARAM
+                        DateTimeOriginal: "2019:10:13 23:30:51"
+                        DateTimeDigitized: "2019:10:13 23:30:51"
+                        ApertureValue: 6.918863
+                        MeteringMode: 5
+                        Flash: 0
+                        FocalLength: 63
+                        ColorSpace: 1
+                        SensingMethod: 2
+                        ExposureMode: 1
+                        WhiteBalance: 0
+                        ISOSpeedRatings: 100
+                        FNumber: 11
+                        ExposureTime: 3
+                        LensModel: GF63mmF2.8 R WR
+                      iptc:
+                        author: MAHESH SHANTARAM
+                      dimensions:
+                        width: 1670
+                        height: 1252
+                    asset:
+                      sha256: 858bee16e500c6ad4d048391e53ab57a6e5622f0affab5a83360176334ecaebf
+                      mime: image/jpeg
+                      bytes: 1691842
+                      width: 1670
+                      height: 1252
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/UpstreamFetchFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /verify/mini:
+    get:
+      tags: [verify]
+      summary: Compact trust card for an image URL
+      description: |
+        Lightweight variant of `/verify` for URL inputs — returns the same
+        verdict fields as the viewer's `c2paMini` badge plus the trust
+        resolution. Cheap enough for embeds and link previews.
+      operationId: verifyMini
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema: { type: string, format: uri }
+          description: Public http(s) URL of the image.
+        - $ref: '#/components/parameters/Trust'
+      responses:
+        '200':
+          description: Compact verification card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiniResult'
+              examples:
+                verified:
+                  # Shape mirrors fixtures/golden/*.c2paMini.json plus `trust`.
+                  value:
+                    creator: Adobe make_test
+                    digital_source_type: Algorithmic Media
+                    issued_by: C2PA Test Signing Cert
+                    issued_on: Sep 29, 2023 at 11:10 PM GMT+5:30
+                    status: Authenticity Verified
+                    trust:
+                      state: Valid
+                      basis: none
+                    more: https://c2pa.thecontrarian.in/?uri=https%3A%2F%2Fexample.com%2Fphoto.jpg
+                unverified:
+                  value:
+                    creator: null
+                    digital_source_type: null
+                    issued_by: null
+                    issued_on: null
+                    status: Unverified
+                    trust:
+                      state: null
+                      basis: null
+                    more: https://c2pa.thecontrarian.in/?uri=https%3A%2F%2Fexample.com%2Fplain.jpg
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/UpstreamFetchFailed'
+  /jobs:
+    post:
+      tags: [jobs]
+      summary: Enqueue an asynchronous verification job
+      description: |
+        For assets over the 20 MiB sync cap or `url` inputs that are slow to
+        fetch. Returns `202` with a job handle; poll `GET /jobs/{job_id}` or
+        supply `webhook_url` for a `job.completed` callback.
+
+        `Idempotency-Key` (optional header): repeating a request with the same
+        key returns `200` with the original job's acceptance payload (its
+        creation-time status, not the current state — poll `GET /jobs/{job_id}`
+        for that) instead of enqueueing a duplicate.
+      operationId: createJob
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobCreate'
+      responses:
+        '202':
+          description: Job accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreated'
+              example:
+                job_id: job_01JZX4K8Q2MNBVCXZ
+                status: awaiting_upload
+                upload:
+                  url: https://uploads.c2pa.thecontrarian.in/job_01JZX4K8Q2MNBVCXZ
+                  method: PUT
+                  headers:
+                    content-type: image/jpeg
+                  expires_at: "2026-11-24T22:27:29Z"
+        '200':
+          description: Same-key replay. Returns the original job's acceptance payload, not its current status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /jobs/{job_id}:
+    get:
+      tags: [jobs]
+      summary: Poll a verification job
+      operationId: getJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current job state; `result` present when `succeeded`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+              example:
+                job_id: job_01JZX4K8Q2MNBVCXZ
+                status: processing
+                created_at: "2026-11-24T21:30:00Z"
+                completed_at: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown job id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://api.c2pa.thecontrarian.in/problems/job_not_found
+                title: Job not found
+                status: 404
+                code: job_not_found
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /trust-lists:
+    get:
+      tags: [trust]
+      summary: Active trust lists and their provenance
+      description: Mirrors `trust/meta.json` — which C2PA Trust List commit and ITL snapshot produced the verdicts.
+      operationId: getTrustLists
+      security: []
+      responses:
+        '200':
+          description: Trust-list metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustLists'
+              example:
+                fetched_at: "2026-11-24T21:27:29.826Z"
+                lists:
+                  c2pa:
+                    source_url: https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TRUST-LIST.pem
+                    fetched_at: "2026-11-24T21:27:29.826Z"
+                    sha256: 859f422cf4744a45de6f073b258d76381c91a9624c10aaa40543c19c1f124e13
+                    cert_count: 36
+                    commit: 285d98e4b575198180c1d6404a7ee1a317e04911
+                    commit_date: "2026-11-20T18:47:23Z"
+                  itl:
+                    source_url: https://contentcredentials.org/trust/anchors.pem
+                    fetched_at: "2026-11-24T21:27:29.826Z"
+                    sha256: db57e50b9bd4e4c786cbb91f38fd85e2af6a9d5412438a8cddcc42688df07ae5
+                    cert_count: 27
+                  config:
+                    source_url: https://contentcredentials.org/trust/store.cfg
+                    fetched_at: "2026-11-24T21:27:29.826Z"
+                    sha256: 1044c30a906b0c9cbe28b4a4c0002ca56a718f0ae22b9af83238543a07d0e718
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /openapi.json:
+    get:
+      tags: [trust]
+      summary: This OpenAPI document
+      operationId: getOpenApi
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI 3.1 document itself.
+          content:
+            application/json:
+              schema: { type: object }
+webhooks:
+  jobCompleted:
+    post:
+      operationId: jobCompletedWebhook
+      summary: Job completion callback
+      # Outbound callback: the receiver does not present this API's bearer key.
+      # Authentication is the X-C2PA-Signature HMAC described below.
+      security: []
+      parameters:
+        - name: X-C2PA-Signature
+          in: header
+          required: true
+          schema: { type: string }
+          description: '`t=<unix>,v1=<hex>` — hex is HMAC-SHA256 of `"<t>.<raw body>"` keyed by the webhook signing secret.'
+      description: |
+        Sent to the job's `webhook_url` when a job reaches `succeeded` or
+        `failed`. Signed with `X-C2PA-Signature: t=<unix>,v1=<hex>` where the
+        hex is HMAC-SHA256 of the string `"<t>.<raw body>"` keyed by the
+        webhook signing secret shown at key issuance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event, job]
+              properties:
+                event:
+                  type: string
+                  enum: [job.completed]
+                job:
+                  $ref: '#/components/schemas/Job'
+      responses:
+        '200':
+          description: Acknowledged.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        `Authorization: Bearer c2pa_live_…` for production keys,
+        `c2pa_test_…` for sandbox keys.
+  parameters:
+    Include:
+      name: include
+      in: query
+      required: false
+      schema:
+        type: string
+        default: exif,iptc
+      examples:
+        default: { value: "exif,iptc" }
+        all: { value: "exif,iptc,gps,thumbnails,raw_manifest" }
+      description: |
+        Comma-separated result sections: `exif`, `iptc`, `gps`,
+        `thumbnails`, `raw_manifest`. Default `exif,iptc`. Sections not
+        listed are omitted from the response. `gps` is still suppressed when
+        `strip_gps=true`.
+    Trust:
+      name: trust
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [c2pa, c2pa_and_itl]
+        default: c2pa_and_itl
+      description: |
+        Which trust lists may produce a `trusted` verdict. `c2pa` accepts only
+        the official C2PA Trust List; `c2pa_and_itl` (default) also accepts the
+        frozen Interim Trust List used by Adobe's current signing pipeline —
+        the `trust.basis` field reports which list matched.
+    StripGps:
+      name: strip_gps
+      in: query
+      required: false
+      schema: { type: boolean, default: true }
+      description: |
+        When true (default), `metadata.gps` is null and no GPS data appears anywhere in the response.
+        For `raw_manifest` this means assertion payloads are redacted recursively before return:
+        every object key whose final namespace component (the part after the last `:`) starts with
+        `gps` or is exactly `latitude`/`longitude` (case-insensitive) is dropped at any depth.
+  headers:
+    RateLimitLimit:
+      description: Requests allowed per window.
+      schema: { type: integer }
+    RateLimitRemaining:
+      description: Requests remaining in the current window.
+      schema: { type: integer }
+    RateLimitReset:
+      description: Seconds until the window resets.
+      schema: { type: integer }
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer }
+  responses:
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing or invalid API key.
+      headers:
+        WWW-Authenticate: { schema: { type: string } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.c2pa.thecontrarian.in/problems/unauthorized
+            title: Unauthorized
+            status: 401
+            code: unauthorized
+    Forbidden:
+      description: Key valid but lacks permission (e.g. live-only endpoint on a test key).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.c2pa.thecontrarian.in/problems/forbidden
+            title: Forbidden
+            status: 403
+            code: forbidden
+    PayloadTooLarge:
+      description: Body exceeds the 20 MiB synchronous cap.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - type: object
+                properties:
+                  max_sync_bytes:
+                    type: integer
+                    description: Hard synchronous size cap in bytes.
+                  hint:
+                    type: string
+                    description: Suggested alternative.
+          example:
+            type: https://api.c2pa.thecontrarian.in/problems/payload_too_large
+            title: Payload Too Large
+            status: 413
+            code: payload_too_large
+            max_sync_bytes: 20971520
+            hint: Use POST /v1/jobs for assets larger than 20 MiB.
+    UnsupportedMediaType:
+      description: Unsupported Content-Type or image format.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.c2pa.thecontrarian.in/problems/unsupported_media_type
+            title: Unsupported Media Type
+            status: 415
+            code: unsupported_media_type
+    Unprocessable:
+      description: Well-formed request that cannot be processed (bad base64, unfetchable URL, invalid options).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.c2pa.thecontrarian.in/problems/invalid_request
+            title: Unprocessable Entity
+            status: 422
+            code: invalid_request
+    RateLimited:
+      description: Rate or quota limit hit.
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.c2pa.thecontrarian.in/problems/rate_limited
+            title: Too Many Requests
+            status: 429
+            code: rate_limited
+    UpstreamFetchFailed:
+      description: The asset URL could not be fetched.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.c2pa.thecontrarian.in/problems/upstream_fetch_failed
+            title: Upstream Fetch Failed
+            status: 502
+            code: upstream_fetch_failed
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.c2pa.thecontrarian.in/problems/internal_error
+            title: Internal Server Error
+            status: 500
+            code: internal_error
+  schemas:
+    Code:
+      type: object
+      required: [code, explanation]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          description: Machine-readable validation code (c2pa-rs, e.g. `claimSignature.validated`).
+        explanation:
+          type: [string, 'null']
+          description: Human-readable explanation from the validator.
+        url:
+          type: string
+          description: JUMBF/self URI the code applies to, when available.
+    VerifyResult:
+      type: object
+      required: [id, engine, status, trust, validation, active_manifest, provenance, metadata, asset]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: Server-assigned result id (`ver_…`).
+        engine:
+          type: object
+          required: [name, version, trust_lists]
+          additionalProperties: false
+          properties:
+            name: { type: string, description: Validation engine identifier. }
+            version: { type: string, description: Engine version. }
+            trust_lists:
+              type: object
+              required: [c2pa, itl]
+              additionalProperties: false
+              properties:
+                c2pa:
+                  type: object
+                  required: [commit, date]
+                  additionalProperties: false
+                  properties:
+                    commit: { type: [string, 'null'], description: Upstream commit sha of the C2PA Trust List. }
+                    date: { type: [string, 'null'], description: Commit date of that revision. }
+                itl:
+                  type: object
+                  required: [fetched_at]
+                  additionalProperties: false
+                  properties:
+                    fetched_at: { type: [string, 'null'], description: Fetch timestamp of the ITL snapshot. }
+        status:
+          type: string
+          enum: [trusted, valid_untrusted, invalid, no_manifest]
+          description: |
+            Rolled-up verdict. `trusted` — signer matched a trust list;
+            `valid_untrusted` — signature valid but signer on no list;
+            `invalid` — validation failure; `no_manifest` — no C2PA manifest.
+        trust:
+          type: object
+          required: [basis]
+          additionalProperties: false
+          properties:
+            basis:
+              type: [string, 'null']
+              enum: [c2pa_trust_list, interim_trust_list, none, null]
+              description: Which list produced trust, `none` when valid-but-untrusted, null when not evaluated.
+        validation:
+          type: object
+          required: [state, success, informational, failure]
+          additionalProperties: false
+          properties:
+            state:
+              type: [string, 'null']
+              enum: [Valid, Invalid, Trusted, null]
+              description: Manifest-store validation_state.
+            success: { type: array, items: { $ref: '#/components/schemas/Code' }, description: Passed checks. }
+            informational: { type: array, items: { $ref: '#/components/schemas/Code' }, description: Informational checks. }
+            failure: { type: array, items: { $ref: '#/components/schemas/Code' }, description: Failed checks. }
+        active_manifest:
+          type: [object, 'null']
+          required: [label, claim_generator, signer, digital_source_type, author, actions, ingredients]
+          additionalProperties: false
+          properties:
+            label:
+              type: [string, 'null']
+              description: Manifest store label (e.g. `contentauth:urn:uuid:…`).
+            claim_generator: { type: [string, 'null'], description: Claim generator string. }
+            signer:
+              type: object
+              required: [issuer, common_name, serial_number, signed_at]
+              additionalProperties: false
+              properties:
+                issuer: { type: [string, 'null'] }
+                common_name: { type: [string, 'null'] }
+                serial_number: { type: [string, 'null'] }
+                signed_at: { type: [string, 'null'], format: date-time, description: RFC 3339 signing time. }
+            digital_source_type:
+              type: [object, 'null']
+              required: [code, label]
+              additionalProperties: false
+              properties:
+                code: { type: string }
+                label: { type: string }
+            author:
+              type: [object, 'null']
+              description: CreativeWork assertion data (schema.org), null when absent.
+            actions:
+              type: array
+              items: { type: object }
+              description: C2PA actions performed on the asset.
+            ingredients:
+              type: array
+              items: { type: object }
+              description: Manifest ingredients (source assets).
+        provenance:
+          type: array
+          items: { type: object }
+          description: Human-readable provenance rows (same rows the viewer renders, incl. Signer Trust).
+        metadata:
+          type: object
+          required: [dimensions]
+          additionalProperties: false
+          properties:
+            exif:
+              type: object
+              description: EXIF tag map (present when `include` has `exif`).
+            iptc:
+              type: object
+              description: IPTC field map (present when `include` has `iptc`).
+            gps:
+              type: [object, 'null']
+              description: '{latitude, longitude} or null — always null when strip_gps=true (present when `include` has `gps`).'
+            dimensions:
+              type: object
+              required: [width, height]
+              additionalProperties: false
+              properties:
+                width: { type: [integer, 'null'] }
+                height: { type: [integer, 'null'] }
+        asset:
+          type: object
+          required: [sha256, mime, bytes, width, height]
+          additionalProperties: false
+          properties:
+            sha256:
+              type: string
+              pattern: '^[0-9a-f]{64}$'
+              description: SHA-256 of the exact submitted bytes.
+            mime: { type: [string, 'null'], description: MIME type used for parsing. }
+            bytes: { type: integer, description: Input size in bytes. }
+            width: { type: [integer, 'null'] }
+            height: { type: [integer, 'null'] }
+        thumbnails:
+          type: object
+          additionalProperties: false
+          description: Present only when `include` has `thumbnails`.
+          properties:
+            claim_thumbnail:
+              type: object
+              required: [mime, data_base64]
+              additionalProperties: false
+              properties:
+                mime: { type: string }
+                data_base64: { type: string, description: Base64 image bytes. }
+            ingredient_thumbnails:
+              type: array
+              items:
+                type: object
+                required: [mime, data_base64]
+                additionalProperties: false
+                properties:
+                  mime: { type: string }
+                  data_base64: { type: string }
+        raw_manifest:
+          type: [object, 'null']
+          description: Full extracted manifest data (present only when `include` has `raw_manifest`).
+    MiniResult:
+      type: object
+      required: [creator, digital_source_type, issued_by, issued_on, status, more]
+      additionalProperties: false
+      properties:
+        creator: { type: [string, 'null'], description: Manifest author/creator name. }
+        digital_source_type: { type: [string, 'null'], description: Human-readable source-type label. }
+        issued_by: { type: [string, 'null'], description: Signing credential issuer. }
+        issued_on: { type: [string, 'null'], description: Formatted signing timestamp. }
+        status:
+          type: string
+          enum: [Authenticity Verified, Unverified]
+          description: Badge status — `Authenticity Verified` only for Valid/Trusted validation_state.
+        trust:
+          type: object
+          additionalProperties: false
+          properties:
+            state: { type: [string, 'null'], enum: [Trusted, Valid, Invalid, null] }
+            basis: { type: [string, 'null'], enum: [c2pa_trust_list, interim_trust_list, none, null] }
+          description: Trust resolution (present on API responses; absent in legacy viewer output).
+        more:
+          type: string
+          format: uri
+          description: Link to the full verification result for this asset.
+    JobCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        url: { type: string, format: uri, description: Asset URL to fetch and verify. }
+        filename: { type: string, description: Display filename hint. }
+        mime: { type: string, description: Expected MIME type. }
+        size_bytes: { type: integer, description: "Expected size, used for upload-session sizing." }
+        webhook_url: { type: string, format: uri, description: Callback for job.completed. }
+        include:
+          type: string
+          description: Comma-separated section list (same values as /verify `include`).
+        trust: { type: string, enum: [c2pa, c2pa_and_itl], default: c2pa_and_itl }
+        strip_gps: { type: boolean, default: true }
+      description: Provide `url` to fetch server-side, or omit it to receive an upload URL.
+    JobCreated:
+      type: object
+      required: [job_id, status, upload]
+      additionalProperties: false
+      properties:
+        job_id: { type: string }
+        status:
+          type: string
+          enum: [queued, awaiting_upload]
+          description: '`queued` when a URL fetch was scheduled; `awaiting_upload` when the client must PUT bytes first.'
+        upload:
+          type: [object, 'null']
+          required: [url, method, headers, expires_at]
+          additionalProperties: false
+          properties:
+            url: { type: string, format: uri }
+            method: { type: string, enum: [PUT] }
+            headers: { type: object, additionalProperties: { type: string } }
+            expires_at: { type: string, format: date-time }
+    Job:
+      type: object
+      required: [job_id, status, created_at]
+      additionalProperties: false
+      allOf:
+        - if:
+            properties: { status: { const: succeeded } }
+            required: [status]
+          then:
+            required: [result]
+            properties:
+              result:
+                $ref: '#/components/schemas/VerifyResult'
+        - if:
+            properties: { status: { const: failed } }
+            required: [status]
+          then:
+            required: [error]
+            properties:
+              error:
+                $ref: '#/components/schemas/Problem'
+      properties:
+        job_id: { type: string }
+        status:
+          type: string
+          enum: [queued, awaiting_upload, processing, succeeded, failed]
+        created_at: { type: string, format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+        result:
+          $ref: '#/components/schemas/VerifyResult'
+          description: Present when status is `succeeded`.
+        error:
+          $ref: '#/components/schemas/Problem'
+          description: Present when status is `failed`.
+    TrustLists:
+      type: object
+      required: [fetched_at, lists]
+      additionalProperties: false
+      properties:
+        fetched_at: { type: string, format: date-time }
+        lists:
+          type: object
+          required: [c2pa, itl, config]
+          additionalProperties: false
+          properties:
+            c2pa:
+              type: object
+              required: [source_url, fetched_at, sha256, cert_count, commit, commit_date]
+              additionalProperties: false
+              properties:
+                source_url: { type: string, format: uri }
+                fetched_at: { type: string, format: date-time }
+                sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                cert_count: { type: integer }
+                commit: { type: string, description: Upstream git commit sha. }
+                commit_date: { type: string, format: date-time }
+            itl:
+              type: object
+              required: [source_url, fetched_at, sha256, cert_count]
+              additionalProperties: false
+              properties:
+                source_url: { type: string, format: uri }
+                fetched_at: { type: string, format: date-time }
+                sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                cert_count: { type: integer }
+            config:
+              type: object
+              required: [source_url, fetched_at, sha256]
+              additionalProperties: false
+              properties:
+                source_url: { type: string, format: uri }
+                fetched_at: { type: string, format: date-time }
+                sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      additionalProperties: true
+      description: RFC 9457 problem details plus our `code` member.
+      properties:
+        type:
+          type: string
+          format: uri
+          description: Problem type URI.
+        title: { type: string }
+        status: { type: integer }
+        code:
+          type: string
+          enum:
+            - unauthorized
+            - forbidden
+            - rate_limited
+            - quota_exceeded
+            - payload_too_large
+            - unsupported_media_type
+            - invalid_request
+            - upstream_fetch_failed
+            - job_not_found
+            - internal_error
+        detail: { type: string }
+        instance: { type: string, format: uri }

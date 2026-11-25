@@ -1,0 +1,118 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "c2pa-verify-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-24",
+  // agents/mcp/server uses AsyncLocalStorage from node:async_hooks.
+  "compatibility_flags": ["nodejs_compat"],
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": ["**/*.wasm"],
+      "fallthrough": true
+    },
+    {
+      // pem/cfg: vendored trust lists. yaml: api/openapi.yaml is served as
+      // text at /v1/openapi.json — the Text rule is what makes it importable.
+      "type": "Text",
+      "globs": ["**/*.pem", "**/*.cfg", "**/*.yaml"],
+      "fallthrough": true
+    }
+  ],
+  "vars": {
+    // Public account routing value used only to construct R2 S3 endpoint URLs
+    // for direct-upload presigning. Credentials remain optional secrets.
+    "R2_ACCOUNT_ID": "9f6c75ebdcbc7447c7e7748b803c1c2f"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "c2pa-verify-api",
+      "database_id": "0e4461c8-9386-46f3-84b6-6ab128703f55"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "JOBS_BUCKET",
+      "bucket_name": "c2pa-verify-jobs"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOBS_QUEUE",
+        "queue": "c2pa-verify-jobs"
+      },
+      {
+        "binding": "JOBS_DLQ",
+        "queue": "c2pa-verify-jobs-dlq"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "c2pa-verify-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "c2pa-verify-jobs-dlq",
+        "retry_delay": 30,
+        // visibility_timeout is a pull-consumer-only setting and would be
+        // ignored on this push consumer. Redelivery during a long verification
+        // is instead absorbed by claimProcessing's processing-token guard.
+        "max_concurrency": 8
+      }
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "JOB_RUNNER",
+        "class_name": "JobRunner"
+      }
+    ]
+  },
+  "exports": {
+    "JobRunner": {
+      "type": "durable-object",
+      "storage": "sqlite",
+      "container": "c2pa-verify-job-runner"
+    }
+  },
+  "containers": [
+    {
+      "name": "c2pa-verify-job-runner",
+      "class_name": "JobRunner",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "dockerfile": "container/Dockerfile",
+          // Paths are relative to api/wrangler.jsonc; the Dockerfile copies
+          // packages/core as well as api/container, so the repo root is required.
+          "build_context": ".."
+        }
+      },
+      "observability": {
+        "enabled": true,
+        "logs": { "enabled": true }
+      }
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "persist": true,
+      "invocation_logs": true
+    }
+  },
+  "ratelimits": [
+    {
+      "name": "RATELIMIT",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    }
+  ]
+}

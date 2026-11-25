@@ -1,0 +1,20 @@
+{
+  "author_info": null,
+  "c2pa_data": null,
+  "digital_source_type": null,
+  "provenance": [],
+  "thumbnails": {},
+  "trust": {
+    "basis": null,
+    "lists": {
+      "c2pa": {
+        "commit": "285d98e4b575198180c1d6404a7ee1a317e04911",
+        "date": "2026-11-20T18:47:23Z"
+      },
+      "itl": {
+        "fetched_at": "2026-11-24T21:27:29.826Z"
+      }
+    },
+    "state": null
+  }
+}

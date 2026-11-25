@@ -1,0 +1,24 @@
+{
+  "fetched_at": "2026-11-24T21:27:29.826Z",
+  "lists": {
+    "c2pa": {
+      "source_url": "https://raw.githubusercontent.com/c2pa-org/conformance-public/main/trust-list/C2PA-TRUST-LIST.pem",
+      "fetched_at": "2026-11-24T21:27:29.826Z",
+      "sha256": "859f422cf4744a45de6f073b258d76381c91a9624c10aaa40543c19c1f124e13",
+      "cert_count": 36,
+      "commit": "285d98e4b575198180c1d6404a7ee1a317e04911",
+      "commit_date": "2026-11-20T18:47:23Z"
+    },
+    "itl": {
+      "source_url": "https://contentcredentials.org/trust/anchors.pem",
+      "fetched_at": "2026-11-24T21:27:29.826Z",
+      "sha256": "db57e50b9bd4e4c786cbb91f38fd85e2af6a9d5412438a8cddcc42688df07ae5",
+      "cert_count": 27
+    },
+    "config": {
+      "source_url": "https://contentcredentials.org/trust/store.cfg",
+      "fetched_at": "2026-11-24T21:27:29.826Z",
+      "sha256": "1044c30a906b0c9cbe28b4a4c0002ca56a718f0ae22b9af83238543a07d0e718"
+    }
+  }
+}

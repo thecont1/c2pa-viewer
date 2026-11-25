@@ -1,0 +1,28 @@
+{
+  "tampered.jpg": {
+    "exif": {},
+    "file_size_bytes": 137886,
+    "file_size_mb": 0.13,
+    "filename": "tampered.jpg",
+    "format": "JPEG",
+    "gps": {},
+    "height": 1365,
+    "iptc": {},
+    "photography": {
+      "aperture": "Unknown",
+      "artist": "Unknown",
+      "camera_make": "Unknown",
+      "camera_model": "Unknown",
+      "color_profile": "Unknown",
+      "color_space": "Unknown",
+      "date_digitized": "Unknown",
+      "date_original": "Unknown",
+      "description": "No description available",
+      "focal_length": "Unknown",
+      "iso": "Unknown",
+      "lens_model": "Unknown",
+      "shutter_speed": "Unknown"
+    },
+    "width": 2048
+  }
+}

@@ -40,207 +40,40 @@ An image viewer web application that allows users to verify [C2PA content creden
 - Handles both local files and remote URLs
 - CORS-enabled for cross-origin requests
 
-## API Endpoints
+## Verification API
 
-### Core Endpoints
+The machine-consumable verification service (REST + MCP) is documented in
+`api/openapi.yaml` and `docs/API-PLAN.md`. The endpoints formerly listed here
+belonged to a Python/FastAPI implementation that has been removed; the viewer
+itself is fully static and has no server-side API surface beyond the `/api/img`
+proxy.
 
-| Endpoint | Method | Description | Performance |
-|----------|--------|-------------|-------------|
-| `/api/exif_metadata` | GET | EXIF, IPTC, GPS metadata only | Fast (~10-50ms) |
-| `/api/c2pa_metadata` | GET | C2PA provenance, thumbnails, digital source type | Slower (~100-500ms+) |
-| `/api/c2pa_mini` | GET | Minimal C2PA for quick verification | Fast (~50-200ms) |
-| `/api/upload` | POST | Upload image, returns all metadata | Variable |
-
-### GET `/api/exif_metadata`
-
-Retrieve EXIF, IPTC, and GPS metadata for an image (no C2PA cryptographic verification).
-
-**Query Parameters:**
-- `uri` (required): Image file path or URL
-
-**Example:**
-```
-GET /api/exif_metadata?uri=https://example.com/image.jpg
-```
-
-**Response:**
-```json
-{
-  "image.jpg": {
-    "filename": "image.jpg",
-    "format": "JPEG",
-    "width": 4000,
-    "height": 3000,
-    "file_size_bytes": 1234567,
-    "file_size_mb": 1.18,
-    "photography": {
-      "camera_make": "Canon",
-      "camera_model": "EOS R5",
-      "lens_model": "RF 24-70mm f/2.8L",
-      "aperture": "f/2.8",
-      "shutter_speed": "1/250s",
-      "iso": "400",
-      "focal_length": "50mm"
-    },
-    "exif": { "Make": "Canon", "Model": "EOS R5", ... },
-    "gps": { "latitude": "40.7128", "longitude": "-74.0060" },
-    "iptc": { "title": "Sunset", "description": "A beautiful sunset", ... }
-  }
-}
-```
-
-### GET `/api/c2pa_metadata`
-
-Retrieve C2PA provenance data, including signature information, edit actions, embedded thumbnails, and digital source type.
-
-**Query Parameters:**
-- `uri` (required): Image file path or URL
-
-**Example:**
-```
-GET /api/c2pa_metadata?uri=https://example.com/image.jpg
-```
-
-**Response:**
-```json
-{
-  "provenance": [
-    { "name": "Claim Generator", "generator": "Lightroom Classic 15.1" },
-    { "name": "Issued By", "issuer": "Adobe Inc." },
-    { "name": "Issued On", "date": "Jan 08, 2026 at 04:21 PM IST" },
-  ],
-  "c2pa_data": { "basic_info": {...}, "signature_info": {...}, "assertions": [...] },
-  "thumbnails": {
-    "claim_thumbnail": "base64_encoded_data...",
-    "ingredient_thumbnail": "base64_encoded_data..."
-  },
-  "digital_source_type": {
-    "code": "digitalCapture",
-    "label": "Digital Camera (RAW)"
-  }
-}
-```
-
-### GET `/api/c2pa_mini`
-
-Retrieve minimal C2PA credentials for quick trust verification (e.g., hover previews). Optimized for speed with 5-minute response caching.
-
-**Query Parameters:**
-- `uri` (required): Image file path or URL
-
-**Example:**
-```
-GET /api/c2pa_mini?uri=https://example.com/image.jpg
-```
-
-**Response:**
-```json
-{
-  "creator": "John Doe",
-  "issued_by": "Adobe Inc.",
-  "issued_on": "Jan 08, 2026 at 04:21 PM IST",
-  "status": "Authenticity Verified",
-  "digital_source_type": "Digital Camera (RAW)",
-  "more": "https://apps.thecontrarian.in/c2pa/?uri=..."
-}
-```
-
-### POST `/api/upload`
-
-Upload an image file and receive complete metadata (EXIF + C2PA) plus the image as a base64 data URL.
-
-**Request:** `multipart/form-data` with file field named `file`
-
-**Example:**
-```
-POST /api/upload
-Content-Type: multipart/form-data
-file: [image file]
-```
-
-**Response:**
-```json
-{
-  "filename.jpg": {
-    "filename": "filename.jpg",
-    "format": "JPEG",
-    "width": 4000,
-    "height": 3000,
-    "photography": {...},
-    "exif": {...},
-    "gps": {...},
-    "iptc": {...},
-    "provenance": [...],
-    "thumbnails": {...},
-    "digital_source_type": { "code": "digitalCapture", "label": "Digital Camera (RAW)" },
-    "image_data": "data:image/jpeg;base64,..."
-  }
-}
-```
-
-### Static File Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Serve the main HTML page |
-| `/styles.css` | GET | Serve CSS stylesheet |
-| `/script.js` | GET | Serve JavaScript file |
-| `/content_credentials_logo.svg` | GET | Serve Content Credentials logo |
-| `/{filename}` | GET | Serve image files (jpg, jpeg, png, gif) |
-
-## How to Run the App
+## How to Run Locally
 
 ### Prerequisites
-- Python 3.12 or higher 
-- UV package manager ([install](https://docs.astral.sh/uv/getting-started/installation/))
+- [Bun](https://bun.sh) 1.4+
 
-### Installation
-1. Clone the repository
-   ```bash
-   git clone https://github.com/thecont1/c2pa-viewer.git
-   cd c2pa-viewer
-   ```
-
-2. Install dependencies using UV:
-   ```bash
-   uv sync
-   ```
-
-### Running the Server
-
-Start the server:
-```bash
-uv run uvicorn server:app --host 0.0.0.0 --port 8080
-```
-
-The server will start on `http://localhost:8080`.
-
-### Testing the API
-
-Run the test script (requires server to be running):
+### Setup and serve
 
 ```bash
-# Test with default remote image
-uv run python test_server.py
-
-# Test with a local file
-uv run python test_server.py --uri /path/to/image.jpg --skip-upload
-
-# Test with a URL
-uv run python test_server.py --uri https://example.com/image.jpg
-
-# Test upload endpoint
-uv run python test_server.py --uri /path/to/image.jpg
+git clone https://github.com/thecont1/c2pa-viewer.git
+cd c2pa-viewer
+bun install
+bun run build
 ```
 
-### Usage
+The viewer is a fully static site — serve the repo root with any static file
+server, e.g. `bunx serve .` or `python3 -m http.server`, then open
+`http://localhost:3000/?uri=https://example.com/image.jpg` (port depends on
+the server). The golden test harness (`bun scripts/golden.mjs`) also serves
+the full app on port 8899 while capturing.
 
-Access the application:
-- Frontend: `http://localhost:8080/`
-- With image: `http://localhost:8080/?uri=https://example.com/image.jpg`
+### Tests
 
-Example:
-[http://localhost:8080/?uri=https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg](http://localhost:8080/?uri=https://thecontrarian.in/library/originals/GHANA/DSCF9243.jpg)
+```bash
+bun run test        # golden + parity + openapi + contract + mcp chain
+bun run test:api    # API smoke matrix
+```
 
 ## Technology Stack
 
@@ -248,7 +81,7 @@ Example:
   - [@contentauth/c2pa-web](https://github.com/contentauth/c2pa-web) — C2PA manifest parsing in a Web Worker (8.4 MB `vendor/c2pa_bg.wasm`)
   - [exifr](https://github.com/MattKetmo/exifr) — EXIF/GPS/IPTC extraction
 - **Edge**: Cloudflare Pages static hosting + Pages Function (`functions/api/img.js`) image proxy
-- **Self-host reference**: Python 3.12, FastAPI, c2pa-python, pillow, Uvicorn (`server.py`)
+- **Verification API**: Cloudflare Worker (`api/`, Hono) — REST `/v1` + MCP `/mcp` + async jobs
 
 ## Build & Deploy (Cloudflare Pages)
 
@@ -287,10 +120,8 @@ mirroring the old `ImagePathContext` behaviour.
 | `src/compute.js` | Browser compute port of the API logic (source of truth for the static build) |
 | `c2pa-compute.js` | Bundled compute (built artifact, committed) |
 | `functions/api/img.js` | Pages Function image proxy |
-| `server.py` | FastAPI server with all API endpoints (self-host reference) |
 | `styles.css` | CSS styling |
 | `script.js` | Frontend JavaScript for rendering metadata |
-| `test_server.py` | API endpoint tests (Python server) |
 
 ## Architecture Notes
 
@@ -308,32 +139,18 @@ The system detects image origin from C2PA data:
 3. Checks ingredient formats for camera types (DNG, RAW → "Digital Camera (RAW)")
 4. Falls back to "Digital Camera" for standard C2PA images
 
-### Why FastAPI over Flask
-- Modern async/await support
-- Built-in data validation with Pydantic
-- Automatic API documentation (OpenAPI/Swagger)
-- Better type safety and IDE support
-- Higher performance
-
-### Why c2pa-python over ExifTool
-- Official C2PA SDK with proper API
-- More reliable metadata extraction
-- Better thumbnail extraction
-- No external process dependencies
-- Direct access to C2PA manifest structure
-
 ## File Structure
 ```
 c2pa-viewer/
 ├── index.html           # Main HTML file
 ├── styles.css           # Stylesheet
-├── script.js            # Frontend JavaScript
-├── server.py            # FastAPI server with all API endpoints
-├── test_server.py       # API endpoint tests
-├── pyproject.toml       # Project dependencies (UV)
-├── uv.lock              # Dependency lock file
-├── Dockerfile           # Docker configuration
-├── fly.toml             # Fly.io deployment config
+├── script.js            # Frontend JavaScript for rendering metadata
+├── src/compute.js       # Browser adapter over the shared core
+├── packages/core/       # Platform-free verification/formatting core
+├── c2pa-compute.js      # Bundled compute (built artifact, committed)
+├── functions/api/img.js # Pages Function image proxy
+├── api/                 # Verification API worker (REST + MCP + jobs)
+├── trust/               # Vendored C2PA + ITL trust anchors
 └── README.md            # This file
 ```
 
