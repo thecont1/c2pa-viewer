@@ -1389,6 +1389,25 @@ body {
   gap: var(--space-4);
 }
 
+/* The Content Credentials logo asset is pure black on transparent; <img>
+   content cannot inherit page colors, so invert it for dark mode — black
+   becomes white with shapes preserved exactly. */
+[data-theme="dark"] .toolbar-logo,
+[data-theme="dark"] .cc-logo-inline,
+[data-theme="dark"] .cc-logo-large,
+[data-theme="dark"] .modal-logo {
+  filter: invert(1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="dark"] .toolbar-logo,
+  [data-theme="dark"] .cc-logo-inline,
+  [data-theme="dark"] .cc-logo-large,
+  [data-theme="dark"] .modal-logo {
+    transition: filter 0.2s ease;
+  }
+}
+
 [data-theme="dark"] .loading-overlay {
   background: rgba(15, 15, 15, 0.9);
 }
