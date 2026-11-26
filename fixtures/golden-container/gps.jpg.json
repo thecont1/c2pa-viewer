@@ -1,0 +1,81 @@
+{
+  "status": 200,
+  "json": {
+    "exif": {
+      "filename": "gps.jpg",
+      "format": "JPEG",
+      "width": 1024,
+      "height": 683,
+      "file_size_bytes": 61803,
+      "file_size_mb": 0.06,
+      "photography": {
+        "camera_make": "Canon",
+        "camera_model": "Canon EOS REBEL T3",
+        "lens_model": "EF-S18-55mm f/3.5-5.6 IS II",
+        "aperture": "f/5.6",
+        "shutter_speed": "1/60s",
+        "iso": "800",
+        "focal_length": "49mm",
+        "date_original": "Jul 30, 2011 at 3:41 PM",
+        "date_digitized": "Jul 30, 2011 at 3:41 PM",
+        "artist": "Unknown",
+        "description": "No description available",
+        "color_space": "sRGB",
+        "color_profile": "sRGB IEC61966-2.1"
+      },
+      "exif": {
+        "Make": "Canon",
+        "Model": "Canon EOS REBEL T3",
+        "XResolution": 240,
+        "YResolution": 240,
+        "Software": "Adobe Lightroom 5.3 (Macintosh)",
+        "DateTime": "2022:05:24 10:51:58",
+        "DateTimeOriginal": "2011:07:30 15:41:25",
+        "DateTimeDigitized": "2011:07:30 15:41:25",
+        "ApertureValue": 4.970854,
+        "MeteringMode": 5,
+        "Flash": 9,
+        "FocalLength": 49,
+        "ColorSpace": 1,
+        "ExposureMode": 0,
+        "WhiteBalance": 0,
+        "ISOSpeedRatings": 800,
+        "FNumber": 5.6,
+        "ExposureTime": 0.016666666666666666,
+        "LensModel": "EF-S18-55mm f/3.5-5.6 IS II"
+      },
+      "gps": {
+        "latitude": "12.9716",
+        "longitude": "77.5946"
+      },
+      "iptc": {}
+    },
+    "c2pa": {
+      "provenance": [],
+      "c2pa_data": null,
+      "author_info": null,
+      "thumbnails": {},
+      "digital_source_type": null,
+      "trust": {
+        "state": null,
+        "basis": null,
+        "lists": {
+          "c2pa": {
+            "commit": "285d98e4b575198180c1d6404a7ee1a317e04911",
+            "date": "2026-11-20T18:47:23Z"
+          },
+          "itl": {
+            "fetched_at": "2026-11-24T21:27:29.826Z"
+          }
+        }
+      }
+    },
+    "validation": null,
+    "asset": {
+      "sha256": "c1a9e63e4a590eb01546374aaf9049aded362cf7ab39473368fe8f0801a25856",
+      "mime": "image/jpeg",
+      "bytes": 61803
+    },
+    "manifest": null
+  }
+}

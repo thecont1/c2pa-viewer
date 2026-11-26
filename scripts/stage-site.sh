@@ -7,9 +7,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 rm -rf .deploy-stage
-mkdir -p .deploy-stage/functions/api .deploy-stage/vendor .deploy-stage/vendor/trust \
+mkdir -p .deploy-stage/functions/api .deploy-stage/vendor .deploy-stage/vendor/trust .deploy-stage/dashboard .deploy-stage/docs \
    .deploy-stage/packages/core/src
 
+cp dashboard/index.html dashboard/dashboard.js dashboard/dashboard.css .deploy-stage/dashboard/
+cp docs-site/index.html docs-site/terms.html docs-site/dpa.html docs-site/retention.html .deploy-stage/docs/
 cp index.html script.js styles.css content_credentials_logo.svg \
    c2pa-compute.js _headers .deploy-stage/
 cp functions/api/img.js .deploy-stage/functions/api/img.js

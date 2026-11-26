@@ -1,9 +1,0 @@
-{
-  "name": "c2pa-verify-job-container",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@contentauth/c2pa-node": "0.12.1",
-    "exifr": "7.1.3"
-  }
-}

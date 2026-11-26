@@ -3,8 +3,21 @@
   "name": "c2pa-verify-api",
   "main": "src/index.js",
   "compatibility_date": "2026-11-24",
+  // Custom domain for the public API. The workers.dev route stays enabled as
+  // a fallback during the transition; the zone thecontrarian.in is in this
+  // account (the Pages viewer already uses c2pa.thecontrarian.in).
+  "routes": [
+    {
+      "pattern": "api.c2pa.thecontrarian.in",
+      "custom_domain": true
+    }
+  ],
+  // Keep the workers.dev route alive during the hostname transition — existing
+  // MCP client configs and smoke scripts still point at it. Revisit removal
+  // once the registry listing (Phase 4) publishes the custom domain.
+  "workers_dev": true,
   // agents/mcp/server uses AsyncLocalStorage from node:async_hooks.
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "rules": [
     {
       "type": "CompiledWasm",
@@ -68,10 +81,18 @@
       {
         "name": "JOB_RUNNER",
         "class_name": "JobRunner"
+      },
+      {
+        "name": "QUOTA_COUNTER",
+        "class_name": "QuotaCounter"
       }
     ]
   },
   "exports": {
+    "QuotaCounter": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    },
     "JobRunner": {
       "type": "durable-object",
       "storage": "sqlite",
@@ -85,7 +106,7 @@
       "scheduling_policy": "durable_object",
       "images": {
         "base": {
-          "dockerfile": "container/Dockerfile",
+          "dockerfile": "container-rs/Dockerfile",
           // Paths are relative to api/wrangler.jsonc; the Dockerfile copies
           // packages/core as well as api/container, so the repo root is required.
           "build_context": ".."
@@ -111,6 +132,22 @@
       "namespace_id": "1001",
       "simple": {
         "limit": 60,
+        "period": 60
+      }
+    },
+    {
+      "name": "SIGNUP_RATELIMIT",
+      "namespace_id": "1002",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    {
+      "name": "BILLING_RATELIMIT",
+      "namespace_id": "1003",
+      "simple": {
+        "limit": 20,
         "period": 60
       }
     }

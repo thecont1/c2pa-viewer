@@ -67,3 +67,53 @@ jobs:
 
       - name: API contract completeness test
         run: bun run test:contract
+
+  container:
+    name: Rust container build + golden parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: api/container-rs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # ubuntu-latest ships rustup with stable Rust — no extra action needed.
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            api/container-rs/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('api/container-rs/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build container (locked)
+        run: cargo build --release --locked
+
+      - name: Run golden parity against frozen Node references
+        working-directory: .
+        run: |
+          api/container-rs/target/release/c2pa-verify-container &
+          CONTAINER_PID=$!
+          trap 'kill $CONTAINER_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:8080/health && break
+            sleep 1
+          done
+          curl -sf -o /dev/null http://localhost:8080/health
+          TZ=UTC bun scripts/parity-container.mjs compare http://localhost:8080
+
+      # The parity corpus includes cloud.jpg, whose remote manifest fetch
+      # requires network egress — available on GitHub-hosted runners.

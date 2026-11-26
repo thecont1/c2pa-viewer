@@ -475,6 +475,43 @@ paths:
         '502':
           $ref: '#/components/responses/UpstreamFetchFailed'
   /jobs:
+    get:
+      tags: [jobs]
+      summary: List recent jobs for the calling key
+      operationId: listJobs
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: before
+          in: query
+          required: false
+          schema: { type: string }
+          description: created_at cursor from a previous page's next_cursor.
+      responses:
+        '200':
+          description: Page of jobs, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs, next_cursor]
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        job_id: { type: string }
+                        status: { type: string, enum: [queued, awaiting_upload, processing, succeeded, failed] }
+                        filename: { type: [string, "null"] }
+                        size_bytes: { type: [integer, "null"] }
+                        error: { type: [object, "null"] }
+                        created_at: { type: string }
+                        completed_at: { type: [string, "null"] }
+                  next_cursor: { type: [string, "null"] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [jobs]
       summary: Enqueue an asynchronous verification job
@@ -625,6 +662,250 @@ paths:
           content:
             application/json:
               schema: { type: object }
+  /signup/free:
+    post:
+      tags: [keys]
+      summary: Create a free-tier API key (self-service signup)
+      operationId: signupFree
+      security: []
+      description: |
+        The single unauthenticated write surface. Requires a Cloudflare
+        Turnstile token; per-IP rate limited. The plaintext key is returned
+        exactly once — only its hash is stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [turnstile_token]
+              properties:
+                turnstile_token: { type: string }
+                name: { type: string, maxLength: 120 }
+      responses:
+        '201':
+          description: Key created. Store the plaintext — it is never shown again.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, display_prefix, tier, quota_monthly, created_at]
+                properties:
+                  key: { type: string, example: c2pa_live_… }
+                  display_prefix: { type: string }
+                  tier: { type: string, enum: [free] }
+                  quota_monthly: { type: integer, example: 1000 }
+                  created_at: { type: string }
+                  notice: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /key:
+    get:
+      tags: [keys]
+      summary: Metadata and current-month usage for the calling key
+      operationId: getKey
+      responses:
+        '200':
+          description: Key metadata with current-month usage snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  display_prefix: { type: string }
+                  name: { type: [string, "null"] }
+                  type: { type: string, enum: [server, browser] }
+                  tier: { type: string, enum: [free, pro, scale] }
+                  scopes: { type: array, items: { type: string } }
+                  quota_monthly: { type: [integer, "null"] }
+                  billing_status: { type: string, enum: [none, active, past_due, unpaid, canceled] }
+                  created_at: { type: string }
+                  rotated_at: { type: [string, "null"] }
+                  usage:
+                    type: object
+                    properties:
+                      month: { type: string, example: '2026-11' }
+                      verify_count: { type: integer }
+                      bytes_total: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /usage:
+    get:
+      tags: [keys]
+      summary: Monthly usage history for the calling key (up to 12 months)
+      operationId: getUsage
+      responses:
+        '200':
+          description: Monthly usage rows, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quota_monthly: { type: [integer, "null"] }
+                  months:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        month: { type: string }
+                        verify_count: { type: integer }
+                        bytes_total: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /key/rotate:
+    post:
+      tags: [keys]
+      summary: Rotate the calling key — issues a successor, revokes this one immediately
+      operationId: rotateKey
+      description: |
+        The successor inherits tier, quota, type, origins, scopes, name and the
+        Stripe billing linkage. The previous key stops working the moment the
+        rotation commits — there is no overlap window.
+      responses:
+        '200':
+          description: Successor key. Store the plaintext — it is never shown again.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { type: string }
+                  display_prefix: { type: string }
+                  rotated_at: { type: string }
+                  notice: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /key/revoke:
+    post:
+      tags: [keys]
+      summary: Revoke the calling key permanently
+      operationId: revokeKey
+      responses:
+        '200':
+          description: Key revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: { type: boolean }
+                  display_prefix: { type: string }
+                  revoked_at: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /billing/checkout:
+    post:
+      tags: [billing]
+      summary: Create a Stripe checkout session for a paid tier
+      operationId: createCheckout
+      security: []
+      description: |
+        Optional bearer auth: an authenticated key upgrades in place (the
+        plaintext never changes); an anonymous caller starts the keyless
+        new-customer flow (Turnstile required) and reveals the key once at
+        /billing/reveal after payment. 503 billing_not_configured when the
+        deployment has no billing provider attached.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tier]
+              properties:
+                tier: { type: string, enum: [pro, scale] }
+                turnstile_token: { type: string }
+      responses:
+        '201':
+          description: Checkout session created — redirect the user to checkout_url.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_url: { type: string }
+                  session_id: { type: string }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503':
+          description: Billing not configured.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /billing/reveal:
+    get:
+      tags: [billing]
+      summary: Reveal the key provisioned by a keyless checkout (exactly once)
+      operationId: revealKey
+      security: []
+      parameters:
+        - name: session_id
+          in: query
+          required: true
+          schema: { type: string }
+      description: |
+        Verifies the checkout session with Stripe, provisions the key in that
+        instant, and returns the plaintext in the same response — plaintext
+        never rests at storage. The first successful reveal wins; every later
+        attempt is 410.
+      responses:
+        '201':
+          description: Key provisioned and revealed. Store it now.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { type: string }
+                  display_prefix: { type: string }
+                  tier: { type: string }
+                  quota_monthly: { type: integer }
+                  created_at: { type: string }
+                  notice: { type: string }
+        '402':
+          description: Checkout session not yet paid.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '410':
+          description: Key already revealed.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /billing/portal:
+    post:
+      tags: [billing]
+      summary: Create a Stripe customer portal session for the calling key
+      operationId: createPortal
+      responses:
+        '200':
+          description: Portal session — redirect the user to portal_url.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portal_url: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /billing/webhook:
+    post:
+      tags: [billing]
+      summary: Stripe webhook receiver (signature-authenticated)
+      operationId: stripeWebhook
+      security: []
+      description: |
+        Server-to-server endpoint for Stripe events. Authentication is the
+        Stripe-Signature header — callers cannot use this endpoint without the
+        webhook signing secret. Handles tier upgrades, downgrades and
+        payment-failure lifecycle.
+      responses:
+        '200':
+          description: Event acknowledged.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 webhooks:
   jobCompleted:
     post:

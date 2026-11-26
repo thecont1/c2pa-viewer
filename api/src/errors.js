@@ -15,6 +15,11 @@ const CODE_TITLES = {
     upstream_fetch_failed: 'Upstream Fetch Failed',
     job_not_found: 'Job not found',
     internal_error: 'Internal Server Error',
+    billing_not_configured: 'Service Unavailable',
+    billing_unavailable: 'Bad Gateway',
+    payment_required: 'Payment Required',
+    not_found: 'Not Found',
+    gone: 'Gone',
 };
 
 // buildProblemPayload(status, code, detail, extra) — the plain object form of

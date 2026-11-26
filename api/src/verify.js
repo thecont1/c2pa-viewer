@@ -13,7 +13,7 @@ import { wasmEngine } from './engine-wasm.js';
 import { problem, ApiError, MAX_SYNC_BYTES, MAX_RAW_BODY_BYTES, payloadTooLarge } from './errors.js';
 import { fetchAsset } from './urlfetch.js';
 import { SANDBOX_SHA256 } from './sandbox-hashes.js';
-import { incrementUsage, currentMonth } from './db.js';
+import { commitQuota } from './quota.js';
 import { RATELIMIT_POLICY, RATELIMIT_LIMIT } from './auth.js';
 
 // c2pa-wasm engine version — literal, matching the pinned
@@ -271,27 +271,20 @@ async function parseVerifyInput(c) {
 
 // --------------------------------------------------------------- metering --
 
-// Increment monthly verification usage off the response path. Shared by the
-// REST handlers and the MCP verification tools; sandbox keys never bill quota.
-export function meterVerification(env, executionCtx, keyRow, keyKind, bytes) {
+// Commit one successful verification against the key's quota reservation.
+// Awaited (not waitUntil) so the commit always lands before the quota
+// middleware's finally-release — exactly-once is enforced by the DO's
+// idempotent terminal transitions. Sandbox keys never bill quota; unlimited
+// keys carry a null token and commit as a no-op. The D1 ledger write happens
+// inside the DO off-path.
+export async function meterVerification(env, keyRow, keyKind, bytes, quotaToken) {
     if (!keyRow) return;
     if (keyKind === 'test') return;
-    if (!executionCtx || typeof executionCtx.waitUntil !== 'function') {
-        console.error('usage increment unavailable: no execution context');
-        return;
-    }
-    try {
-        executionCtx.waitUntil(
-            incrementUsage(env.DB, keyRow.id, currentMonth(), bytes.byteLength)
-                .catch((e) => console.error('usage increment failed:', e))
-        );
-    } catch (e) {
-        console.error('usage increment scheduling failed:', e);
-    }
+    await commitQuota(env, keyRow, quotaToken, bytes.byteLength);
 }
 
 function meter(c, bytes) {
-    meterVerification(c.env, c.executionCtx, c.get('keyRow'), c.get('keyKind'), bytes);
+    return meterVerification(c.env, c.get('keyRow'), c.get('keyKind'), bytes, c.get('quotaToken'));
 }
 
 function withRateHeaders(res) {
@@ -317,6 +310,10 @@ export function apiErrorResponse(e) {
             return problem(422, 'invalid_request', { detail: e.message });
         case 'upstream':
             return problem(502, 'upstream_fetch_failed', { detail: e.message });
+        case 'internal':
+            // Infrastructure failures (quota store, engine init, D1) are
+            // server faults — 422 would misattribute them to the caller.
+            return problem(500, 'internal_error', { detail: e.message });
         case 'quota':
             return problem(429, 'quota_exceeded', {
                 detail: e.message,
@@ -404,7 +401,7 @@ export async function runVerification(env, executionCtx, keyRow, bytes, declared
         strip_gps: stripGps,
     });
 
-    meterVerification(env, executionCtx, keyRow, keyKind, bytes);
+    await meterVerification(env, keyRow, keyKind, bytes, opts.quotaToken);
     return result;
 }
 
@@ -436,6 +433,7 @@ export async function verifyHandler(c) {
             include: options.include,
             strip_gps: options.strip_gps,
             keyKind: c.get('keyKind'),
+            quotaToken: c.get('quotaToken'),
         });
     } catch (e) {
         if (e instanceof ApiError) return apiErrorResponse(e);
@@ -536,6 +534,6 @@ export async function miniHandler(c) {
         };
     }
 
-    meter(c, fetched.bytes);
+    await meter(c, fetched.bytes);
     return withRateHeaders(Response.json(body));
 }

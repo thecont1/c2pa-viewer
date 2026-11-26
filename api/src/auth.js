@@ -20,7 +20,7 @@
 
 import { problem } from './errors.js';
 import { keyKind, lookupKey } from './keys-mw.js';
-import { getUsage, currentMonth } from './db.js';
+import { reserveQuota, releaseQuota } from './quota.js';
 
 export const RATELIMIT_POLICY = '60;w=60';
 export const RATELIMIT_LIMIT = '60';
@@ -98,6 +98,17 @@ export async function authenticateBearer(env, headerValue) {
     return { row, kind };
 }
 
+// Optional bearer auth for endpoints that serve both authenticated and
+// anonymous callers (billing checkout). A presented key is fully validated —
+// a bad key is still a 401/403, only ABSENCE is anonymous.
+export async function optionalAuthMw(c, next) {
+    if (!c.req.header('authorization')) {
+        await next();
+        return;
+    }
+    return await authMw(c, next);
+}
+
 export async function authMw(c, next) {
     const auth = await authenticateBearer(c.env, c.req.header('authorization'));
     if (auth.error) {
@@ -168,42 +179,34 @@ export async function rateLimitMw(c, next) {
     await next();
 }
 
-// Monthly quota check for one key. Reads the usage row for
-// (key_id, current YYYY-MM); when keys.quota_monthly is not null and the count
-// has reached it, the request is rejected before verification work. Null means
-// proceed; otherwise the caller shapes the same error semantics as REST. The
-// usage increment is deliberately not here — it happens only after a
-// successful verification, off the response path (ctx.waitUntil).
-export async function checkQuota(db, keyRow) {
-    if (keyRow.quota_monthly === null || keyRow.quota_monthly === undefined) return null;
-    let usage;
+// Monthly quota enforcement via the QuotaCounter Durable Object. Admission
+// reserves a slot (a pending token, never touching consumed); success commits
+// inside runVerification before the response completes, so the finally-release
+// below is a no-op for committed tokens and the exact release path for every
+// failure shape (shaped 4xx, thrown error, downstream abort). Token expiry in
+// the DO covers the worker-crash case.
+export async function quotaMw(c, next) {
+    const keyRow = c.get('keyRow');
+    let reservation;
     try {
-        usage = await getUsage(db, keyRow.id, currentMonth());
+        reservation = await reserveQuota(c.env, keyRow);
     } catch (e) {
-        console.error('usage read failed:', e);
-        return { status: 500, code: 'internal_error', detail: 'Usage store unavailable.', headers: {} };
+        console.error('quota reserve failed:', e);
+        return problem(500, 'internal_error', { detail: 'Usage store unavailable.' });
     }
-    if (usage.verify_count >= keyRow.quota_monthly) {
-        return {
-            status: 429,
-            code: 'quota_exceeded',
+    if (!reservation) {
+        return problem(429, 'quota_exceeded', {
             detail: `Monthly quota of ${keyRow.quota_monthly} verifications exhausted.`,
             headers: {
                 'RateLimit-Policy': RATELIMIT_POLICY,
                 'RateLimit-Limit': RATELIMIT_LIMIT,
             },
-        };
-    }
-    return null;
-}
-
-export async function quotaMw(c, next) {
-    const failure = await checkQuota(c.env.DB, c.get('keyRow'));
-    if (failure) {
-        return problem(failure.status, failure.code, {
-            detail: failure.detail,
-            headers: failure.headers,
         });
     }
-    await next();
+    c.set('quotaToken', reservation.token);
+    try {
+        await next();
+    } finally {
+        await releaseQuota(c.env, keyRow, reservation.token);
+    }
 }

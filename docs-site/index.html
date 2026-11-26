@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Documentation — C2PA Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+body { background: var(--color-bg-primary); }
+.docs-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space-5) var(--space-8); background: var(--color-bg-card); border-bottom: 1px solid var(--color-border); }
+.docs-brand { font-weight: 700; font-size: 1.05rem; color: var(--color-text-primary); text-decoration: none; }
+.docs-brand span { font-weight: 500; color: var(--color-text-secondary); margin-left: var(--space-2); font-size: 0.85rem; }
+.docs-nav { display: flex; gap: var(--space-5); }
+.docs-nav a { color: var(--color-text-secondary); text-decoration: none; font-size: 0.9rem; font-weight: 500; }
+.docs-nav a:hover { color: var(--color-text-primary); }
+.docs-layout { display: grid; grid-template-columns: 220px 1fr; max-width: 1100px; margin: 0 auto; padding: var(--space-8) var(--space-6); gap: var(--space-8); }
+.docs-toc { position: sticky; top: var(--space-6); align-self: start; font-size: 0.85rem; }
+.docs-toc a { display: block; padding: var(--space-2) 0; color: var(--color-text-secondary); text-decoration: none; }
+.docs-toc a:hover { color: var(--color-text-primary); }
+.docs-toc .toc-h3 { padding-left: var(--space-4); font-size: 0.8rem; }
+.docs-content { min-width: 0; }
+.docs-content h1 { font-size: 1.6rem; margin: 0 0 var(--space-4); }
+.docs-content h2 { font-size: 1.2rem; margin: var(--space-12) 0 var(--space-4); padding-top: var(--space-6); border-top: 1px solid var(--color-border); }
+.docs-content h2:first-of-type { border-top: none; padding-top: 0; margin-top: var(--space-6); }
+.docs-content h3 { font-size: 1rem; margin: var(--space-8) 0 var(--space-3); }
+.docs-content p, .docs-content li { font-size: 0.9rem; line-height: 1.65; color: var(--color-text-primary); }
+.docs-content ul { padding-left: var(--space-8); }
+code { font-family: var(--font-mono); font-size: 0.85em; background: var(--color-bg-tertiary); padding: 1px 5px; border-radius: 3px; }
+pre { background: #1e1e1e; color: #d4d4d4; padding: var(--space-5); border-radius: var(--radius-md); overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+pre code { background: none; padding: 0; color: inherit; }
+.method { display: inline-block; font-family: var(--font-mono); font-weight: 700; font-size: 0.75rem; padding: 2px 8px; border-radius: 3px; margin-right: var(--space-2); }
+.method-post { background: var(--color-success-light); color: var(--color-success); }
+.method-get { background: var(--color-info-light); color: var(--color-info); }
+.endpoint { font-family: var(--font-mono); font-size: 0.9rem; font-weight: 600; }
+table.docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: var(--space-4) 0; }
+.docs-table th, .docs-table td { padding: var(--space-2) var(--space-3); text-align: left; border-bottom: 1px solid var(--color-border-light); vertical-align: top; }
+.docs-table th { color: var(--color-text-secondary); font-weight: 600; font-size: 0.8rem; }
+.callout { background: var(--color-info-light); border-left: 3px solid var(--color-info); padding: var(--space-4) var(--space-5); border-radius: 0 var(--radius-md) var(--radius-md) 0; margin: var(--space-4) 0; font-size: 0.875rem; }
+.callout-warning { background: var(--color-warning-light); border-left-color: var(--color-warning); }
+@media (max-width: 800px) { .docs-layout { grid-template-columns: 1fr; } .docs-toc { position: static; } }
+</style>
+</head>
+<body>
+<header class="docs-header">
+  <a class="docs-brand" href="/">C2PA Viewer <span>API Documentation</span></a>
+  <nav class="docs-nav">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/">Viewer</a>
+  </nav>
+</header>
+
+<div class="docs-layout">
+<nav class="docs-toc">
+  <a href="#quickstart">Quickstart</a>
+  <a href="#authentication">Authentication</a>
+  <a href="#tiers">Tiers &amp; quotas</a>
+  <a href="#verify">Verify synchronously</a>
+  <a href="#jobs">Async jobs</a>
+  <a href="#webhooks">Webhooks</a>
+  <a href="#keys">Key management</a>
+  <a href="#billing">Billing</a>
+  <a href="#trust">Trust lists</a>
+  <a href="#mcp">MCP server</a>
+  <a href="#errors">Errors</a>
+  <a href="#sdks">SDKs</a>
+  <a href="#legal">Legal</a>
+</nav>
+
+<main class="docs-content">
+<h1>C2PA Verify API</h1>
+<p>Verify content authenticity programmatically: C2PA manifest validation, trust-chain verification against the official trust lists, provenance extraction, and nutritional-label metadata — as a synchronous API, an asynchronous job pipeline for large assets, or an MCP server for AI agents.</p>
+<p><strong>Base URL:</strong> <code>https://api.c2pa.thecontrarian.in</code> &nbsp;·&nbsp; <strong>OpenAPI 3.1:</strong> <code>GET /v1/openapi.json</code></p>
+
+<h2 id="quickstart">Quickstart</h2>
+<p>1. Get a free key at the <a href="/dashboard">dashboard</a> (1,000 verifications/month, no card required) or programmatically:</p>
+<pre><code>curl -X POST https://api.c2pa.thecontrarian.in/v1/signup/free \
+  -H 'content-type: application/json' \
+  -d '{"turnstile_token": "&lt;token from the Turnstile widget&gt;"}'</code></pre>
+<p>2. Verify an image:</p>
+<pre><code>curl -X POST https://api.c2pa.thecontrarian.in/v1/verify \
+  -H "authorization: Bearer c2pa_live_…" \
+  -H 'content-type: application/json' \
+  -d '{"url": "https://example.com/photo.jpg"}'</code></pre>
+<p>3. Read the verdict: <code>status</code> is one of <code>trusted</code>, <code>valid_untrusted</code>, <code>invalid</code>, <code>unverified</code>.</p>
+
+<h2 id="authentication">Authentication</h2>
+<p>Every endpoint except the public ones uses a bearer key: <code>Authorization: Bearer c2pa_live_…</code></p>
+<table class="docs-table">
+<tr><th>Key kind</th><th>Prefix</th><th>Behavior</th></tr>
+<tr><td>Live</td><td><code>c2pa_live_</code></td><td>Production. Counted against monthly quota.</td></tr>
+<tr><td>Test</td><td><code>c2pa_test_</code></td><td>Sandbox — only accepts the fixture corpus, never metered.</td></tr>
+</table>
+<p>Keys are shown <strong>exactly once</strong> at creation — only their SHA-256 hash is stored. Lost keys cannot be recovered; rotate instead (<code>POST /v1/key/rotate</code> needs the current key, so protect it).</p>
+<p>Rate limit: <strong>60 requests/minute per key</strong> (429 <code>rate_limited</code> with <code>Retry-After</code>).</p>
+
+<h2 id="tiers">Tiers &amp; quotas</h2>
+<table class="docs-table">
+<tr><th>Tier</th><th>Price</th><th>Verifications / month</th></tr>
+<tr><td>Free</td><td>$0</td><td>1,000</td></tr>
+<tr><td>Pro</td><td>$19/mo</td><td>25,000</td></tr>
+<tr><td>Scale</td><td>$99/mo</td><td>250,000</td></tr>
+</table>
+<p>Quotas are hard caps enforced atomically per key. A verification counts when it succeeds (sync) or is accepted (async jobs); failed verifications and every test-key call are free. Exhaustion returns 429 <code>quota_exceeded</code>; the count resets on the UTC month boundary. Job submissions charge at acceptance — a job that later fails is not refunded.</p>
+
+<h2 id="verify">Verify synchronously</h2>
+<p><span class="method method-post">POST</span><span class="endpoint">/v1/verify</span></p>
+<p>Full verification of one asset up to <strong>20 MiB</strong>. Input is one of:</p>
+<ul>
+<li><strong>JSON url</strong>: <code>{"url": "https://…"}</code> — the service fetches with SSRF protection (redirects re-validated, private hosts blocked)</li>
+<li><strong>JSON base64</strong>: <code>{"data": "…", "mime": "image/jpeg", "filename": "photo.jpg"}</code></li>
+<li><strong>multipart/form-data</strong>: a <code>file</code> field</li>
+</ul>
+<p>Query parameters: <code>include</code> (sections: <code>exif,iptc,gps,thumbnails,raw_manifest</code>; default <code>exif,iptc</code>), <code>trust</code> (<code>c2pa</code> or <code>c2pa_and_itl</code>, default the latter), <code>strip_gps</code> (default true).</p>
+<p>The response is the full <code>VerifyResult</code> — validation state, trust basis, active manifest, claim generator, signer chain, provenance rows, EXIF/IPTC sections, thumbnails, and the asset digest. See the schemas in <a href="https://api.c2pa.thecontrarian.in/v1/openapi.json">the OpenAPI document</a>.</p>
+<p><span class="method method-get">GET</span><span class="endpoint">/v1/verify/mini?url=…</span> — compact trust card (the same payload the viewer's nutritional label uses).</p>
+<div class="callout">Need more than 20 MiB, or files that take a while to fetch? Use async jobs — the ceiling there is 1 GiB.</div>
+
+<h2 id="jobs">Async jobs</h2>
+<p><span class="method method-post">POST</span><span class="endpoint">/v1/jobs</span> — submit; <span class="method method-get">GET</span><span class="endpoint">/v1/jobs/{job_id}</span> — poll; <span class="method method-get">GET</span><span class="endpoint">/v1/jobs</span> — list.</p>
+<p>Two input modes:</p>
+<ul>
+<li><strong>URL job</strong>: <code>{"url": "https://…", "filename": "x.jpg"}</code> — accepted instantly, fetched server-side</li>
+<li><strong>Direct upload</strong>: omit <code>url</code> — the response is <code>awaiting_upload</code> with a presigned PUT session; upload the bytes, R2 notifies the pipeline automatically</li>
+</ul>
+<pre><code>curl -X POST https://api.c2pa.thecontrarian.in/v1/jobs \
+  -H "authorization: Bearer c2pa_live_…" -H 'content-type: application/json' \
+  -H 'Idempotency-Key: order-4173' \
+  -d '{"url": "https://example.com/big.jpg", "filename": "big.jpg",
+       "webhook_url": "https://you.example/hooks/c2pa"}'</code></pre>
+<p>States: <code>queued → processing → succeeded | failed</code>. The terminal job object embeds the full <code>VerifyResult</code> in <code>result</code> or an RFC 9457 problem in <code>error</code>.</p>
+<p><strong>Idempotency</strong>: send <code>Idempotency-Key</code>; a replay returns the original job (200 instead of 202) instead of charging a second verification.</p>
+
+<h2 id="webhooks">Webhooks</h2>
+<p>Attach <code>webhook_url</code> at job creation. Delivery is <strong>at least once</strong>: the callback is retried after non-2xx responses, transport errors, or a 30-second timeout, up to four attempts total. Deduplicate by job identifier — the same terminal state may be delivered more than once. The callback is signed:</p>
+<pre><code>X-C2PA-Signature: t=1732300800,v1=&lt;hex&gt;</code></pre>
+<p><code>v1</code> is HMAC-SHA256 of the string <code>"&lt;t&gt;.&lt;raw body&gt;"</code> keyed by the webhook signing secret (available on the dashboard while rotating a key — store it when issued). Verify the timestamp is fresh (5 minutes), then compare constant-time.</p>
+
+<h2 id="keys">Key management</h2>
+<table class="docs-table">
+<tr><th>Endpoint</th><th>Purpose</th></tr>
+<tr><td><span class="method method-get">GET</span><span class="endpoint">/v1/key</span></td><td>Metadata, tier, billing status, current-month usage</td></tr>
+<tr><td><span class="method method-get">GET</span><span class="endpoint">/v1/usage</span></td><td>Monthly usage history (12 months)</td></tr>
+<tr><td><span class="method method-post">POST</span><span class="endpoint">/v1/key/rotate</span></td><td>Successor key, effective immediately, no overlap window</td></tr>
+<tr><td><span class="method method-post">POST</span><span class="endpoint">/v1/key/revoke</span></td><td>Permanent revocation</td></tr>
+</table>
+<p>Rotation inherits tier, quota, scopes and the Stripe billing linkage — a rotated paid key never loses its subscription.</p>
+
+<h2 id="billing">Billing</h2>
+<p>Paid tiers run through Stripe checkout. Two flows:</p>
+<ul>
+<li><strong>Upgrade in place</strong> — <code>POST /v1/billing/checkout {"tier":"pro"}</code> with your key: the same key becomes paid, plaintext unchanged.</li>
+<li><strong>New customer</strong> — checkout without a key (dashboard handles this): after payment the success page reveals a fresh key exactly once via <code>GET /v1/billing/reveal?session_id=…</code>. The key is provisioned at reveal time — plaintext never rests at storage anywhere.</li>
+</ul>
+<p>Manage payment methods, invoices and cancellation through <code>POST /v1/billing/portal</code> (Stripe customer portal). Cancellation downgrades the key to free at the end of the subscription; failed payments mark it <code>past_due</code> but never hard-cut service.</p>
+
+<h2 id="trust">Trust lists</h2>
+<p><span class="method method-get">GET</span><span class="endpoint">/v1/trust-lists</span> (public) — provenance and digests of the vendored trust lists. The <code>trust</code> parameter on verification selects which lists may produce a <code>trusted</code> verdict; <code>trust.basis</code> in the result reports which list actually matched.</p>
+
+<h2 id="mcp">MCP server</h2>
+<p>The API is also an MCP server at <code>POST /mcp</code> (streamable HTTP, bearer key). Tools:</p>
+<table class="docs-table">
+<tr><th>Tool</th><th>Purpose</th></tr>
+<tr><td><code>verify_image</code></td><td>Compact trust card for a url or base64 image</td></tr>
+<tr><td><code>verify_image_detailed</code></td><td>Full VerifyResult</td></tr>
+<tr><td><code>submit_verification_job</code> / <code>get_verification_job</code></td><td>Async pipeline from MCP clients</td></tr>
+<tr><td><code>explain_validation_code</code></td><td>Human meaning of any validator code</td></tr>
+<tr><td><code>list_trust_lists</code></td><td>Trust-list provenance</td></tr>
+</table>
+
+<h2 id="errors">Errors</h2>
+<p>Every error is <a href="https://www.rfc-editor.org/rfc/rfc9457">RFC 9457</a> <code>application/problem+json</code> with a machine-readable <code>code</code>:</p>
+<table class="docs-table">
+<tr><th>Status</th><th>code</th><th>Meaning</th></tr>
+<tr><td>401</td><td><code>unauthorized</code></td><td>Missing/malformed/unknown key</td></tr>
+<tr><td>403</td><td><code>forbidden</code></td><td>Revoked key, sandbox violation, Turnstile failure</td></tr>
+<tr><td>404</td><td><code>job_not_found</code></td><td>Unknown job — or another key's job (ownership isolation)</td></tr>
+<tr><td>413</td><td><code>payload_too_large</code></td><td>Asset over the 20 MiB sync cap</td></tr>
+<tr><td>415</td><td><code>unsupported_media_type</code></td><td>Format the engine cannot read</td></tr>
+<tr><td>422</td><td><code>invalid_request</code></td><td>Malformed input, unparseable asset</td></tr>
+<tr><td>429</td><td><code>rate_limited</code> / <code>quota_exceeded</code></td><td>Per-minute limit / monthly quota</td></tr>
+<tr><td>502</td><td><code>upstream_fetch_failed</code></td><td>The asset URL could not be fetched</td></tr>
+<tr><td>503</td><td><code>billing_not_configured</code></td><td>Deployment has no billing provider attached</td></tr>
+</table>
+
+<h2 id="sdks">SDKs</h2>
+<p>Thin idiomatic clients — no dependencies beyond the platform fetch/HTTP:</p>
+<ul>
+<li><strong>TypeScript</strong>: <a href="https://github.com/thecont1/c2pa-viewer/tree/main/sdk/typescript">sdk/typescript</a> — works in Node 18+, Bun, Deno, workers</li>
+<li><strong>Python</strong>: <a href="https://github.com/thecont1/c2pa-viewer/tree/main/sdk/python">sdk/python</a> — 3.9+, stdlib only</li>
+</ul>
+<pre><code>import { C2paClient } from 'c2pa-verify';
+const api = new C2paClient('c2pa_live_…');
+const result = await api.verify({ url: 'https://example.com/photo.jpg' });
+console.log(result.status);</code></pre>
+<pre><code>from c2pa_verify import C2paClient
+api = C2paClient('c2pa_live_…')
+result = api.verify(url='https://example.com/photo.jpg')
+print(result['status'])</code></pre>
+
+<h2 id="legal">Legal</h2>
+<ul>
+<li><a href="/docs/terms.html">Terms of Service</a></li>
+<li><a href="/docs/dpa.html">Data Processing Addendum</a></li>
+<li><a href="/docs/retention.html">Data retention statement</a></li>
+</ul>
+</main>
+</div>
+</body>
+</html>

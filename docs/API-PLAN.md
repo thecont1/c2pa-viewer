@@ -48,7 +48,7 @@ Run everything with `bun run test` (golden check + parity + OpenAPI).
 
 ## Phase 1: Sync API MVP
 
-- [ ] `api.` Worker scaffold (Hono, wrangler config, CI deploy)
+- [x] `api.` Worker scaffold (Hono, wrangler config, CI deploy)
 - [x] `POST /v1/verify` accepting multipart, base64 JSON and `url` input
 - [x] SSRF guard and magic-byte MIME sniffing shared with `functions/api/img.js`
 - [x] API keys: format, hashed storage in D1, scopes, rotate and revoke
@@ -110,14 +110,49 @@ Live in production (verified 2026-11-25, smoke-jobs 0 failures + independent re-
 - RESOLVED: presigned client PUT fully working — creds came from the user's existing R2 token (summer-silence-8186) already stored in ~/.config/rclone/rclone.conf; no dashboard action was needed. Verified live 2026-11-25: create(202, awaiting_upload) → client PUT 200 → event notification → processing in ~2s → succeeded 8.5s total, trusted/interim_trust_list, sha256-exact.
 - Instance sizing: wrangler-level instance_type rejected for DO-scheduled containers; size belongs in ctx.container.start() — standard-1 handles 220 MiB, 1 GiB ceiling unproven.
 
+## Phase 3b: Rust container rewrite (decided 2026-11-26)
+
+Full rewrite of the job container in Rust. Exit bar: byte-identical analysis output vs the Node container across the golden corpus, smoke-jobs green, 220 MiB end-to-end re-verified in production.
+
+- [x] M1 Rust service skeleton: HTTP server on 8080 (health + POST /verify), /tmp spool with 1 GiB cap, timeouts, error-mapping parity (400/413/422/500 semantics)
+- [x] M2 c2pa-rs extraction: Reader + Context settings mapped from x-c2pa-settings (trust anchors, verify_trust, remote_manifest_fetch), store JSON + resource extraction parity vs c2pa-node
+- [x] M3 Port c2pa.js transformation + trust.js evaluation (provenance rows, validation buckets, thumbnails)
+- [x] M4 Port detect/dimensions/exif/IPTC/photo formatting (exifr behavioral parity verified on the corpus; PNG/WEBP/GIF EXIF extraction is a documented gap — no corpus coverage)
+- [x] M5 Integration: container image swap, smoke-jobs green, production re-verification, Node container removal
+
+### Phase 3b progress notes
+
+M1–M4 verified 2026-11-26 (`api/container-rs/`, c2pa crate pinned =0.92.2 — the exact version embedded in production c2pa-node 0.12.1, verified via strings in dist/index.node):
+- **Byte-exact parity on all 7 fixtures** (scripts/parity-container.mjs: capture against Node container on :8080, compare against Rust on :8081) — gps.jpg, DSCF9243.jpg, cloud.jpg, C_with_CAWG_data.jpg, C.jpg, A.jpg, tampered.jpg all MATCH, plus edge probes (garbage→422, empty→422, missing settings→400 identical).
+- Remote manifest resolution works: c2pa crate needs the `fetch_remote_manifests` cargo feature; without it remote manifests hard-error. `Error::JumbfNotFound` maps to the no-manifest path (unsigned assets → 200 empty result, matching c2pa-node).
+- Wire settings format for c2pa 0.92: trust.anchors[] entries with trust_kind/trust_uri/trust_config (the legacy flat trust_anchors field is deprecated) — reverse-engineered from c2pa-utilities resolveSettings/toWireSettings + snakeCaseify.
+- Golden capture caveat: the reference Node container MUST run with TZ=UTC (provenance dates render in runtime-local time; an early capture on a UTC+5:30 workstation contaminated the goldens).
+- Parity harness needs the Node container runnable locally. The reference implementation was deleted in M5 — restore it from the merge base first: `git checkout f75b4ff940af03c9e557b37b9bc89d7ff90da306 -- api/container packages/core package.json` (into a scratch worktree, not the working branch), install dependencies there (`bun install` for the root and `packages/core`), then symlink api/container/core → ../../packages/core and api/container/node_modules → ../../node_modules (gitignored). Run it with TZ=UTC or the provenance dates contaminate every golden.
+- Known remaining gaps (no corpus coverage): PNG/WEBP/GIF EXIF extraction (parser handles JPEG+TIFF only), ISO timestamps with non-Z offsets render unconverted, exifr revival edge cases not exercised by the corpus. Number-format differences (serde_json 4000.0 vs JS 4000) are irrelevant — the worker parses the JSON before re-serializing.
+- Dockerfile written (rust:1-bookworm build → debian:bookworm-slim runtime) but not yet built or integration-tested — that is M5.
+
+M5 completed 2026-11-26 (worker version c7d3f172):
+- Docker image builds in 2m35s, 174 MB (vs ~1 GB Node image), passes full 7-fixture parity inside Docker. Deployed via `wrangler deploy`; wrangler.jsonc now points at `container-rs/Dockerfile`. Node container (`api/container/`) removed.
+- Production smoke-jobs: 18/19 rows pass — direct-upload R2 path, small+large URL jobs, ownership isolation, idempotency replay, 404 failure handling, webhook HMAC delivery, MCP submit/poll. **220 MiB end-to-end in 58.1s** with byte-exact sha256 and Valid state.
+- The one failing row ("small job result deep-compares with POST /v1/verify") is NOT container-related: the sync `/v1/verify` fetch of thecontrarian.in fails with upstream HTTP 522 (Cloudflare edge cannot reach the library.thecontrarian.in origin from the worker-subrequest network path) — while the async consumer fetches the same URL fine and browser/curl fetches succeed in <300ms. Worker code is byte-identical to the November CI deploy (verified via git diff); the sync path never touches the container. This is an origin-reachability issue on the thecontrarian.in infrastructure side, to be investigated there — the smoke row should pass once the origin is reachable from Cloudflare's subrequest paths again.
+- Post-deploy key hygiene: smoke/debug keys are created and revoked per-run; no long-lived measurement keys remain.
+
 ## Phase 4: Commercial layer
 
-- [ ] Usage metering in D1 and per-key quota Durable Object
-- [ ] Stripe metered billing
-- [ ] Customer dashboard (keys, usage)
-- [ ] Docs site and generated SDKs (TypeScript, Python)
-- [ ] Terms of service, DPA, retention statement
-- [ ] First paying key
+Decisions locked 2026-11-26:
+- **Tiers**: free 1,000 verifications/mo $0 · pro 25,000/mo $19 · scale 250,000/mo $99. Hard caps (429 quota_exceeded, consistent with existing enforcement); usage reported to Stripe for visibility/overage-readiness but no overage billing in v1.
+- **Billing**: billing-agnostic adapter (`api/src/billing.js`) with a Stripe implementation wired test-mode-ready; activated when keys arrive. **Provider undecided** — user may choose RazorPay instead of Stripe; the adapter boundary is the integration point, no provider-specific logic outside it. No email infrastructure — keys are delivered once post-checkout via session_id reveal, dashboard auth is the API key itself, billing management redirects to the Stripe customer portal.
+- **Dashboard + docs**: extend the existing Pages viewer (`/dashboard`, `/docs`), not a separate app.
+- **Free signup abuse control**: Cloudflare Turnstile + per-IP rate limit on the signup endpoint.
+
+Milestones:
+- [x] P4.1 Per-key quota Durable Object: atomic reserve/commit/release with expiring reservation tokens (crash-safe), month rollover, D1 usage table remains the metering ledger; eliminates the check-then-increment race in the current D1-read quota path
+- [x] P4.2 Self-service key backend: POST /v1/signup/free (Turnstile-verified), key-authed management endpoints (GET /v1/key, GET /v1/usage, POST /v1/key/rotate, POST /v1/key/revoke, GET /v1/jobs list), migration 0003 (stripe customer/subscription columns)
+- [x] P4.3 Billing adapter + Stripe impl: POST /v1/billing/checkout (key-auth upgrade OR keyless new-customer flow), GET /v1/billing/checkout-session reveal-once, POST /v1/billing/portal, POST /v1/billing/webhook (signature-verified: checkout.session.completed → tier upgrade, subscription.deleted → downgrade to free), clean 503 when unconfigured
+- [x] P4.4 Customer dashboard in the Pages viewer: key-auth, usage/quota meters, jobs list, rotate/revoke, upgrade flow, signup flow with Turnstile
+- [x] P4.5 Docs site in the Pages viewer (/docs: quickstart, auth, sync, async, webhooks, MCP, trust, errors, quotas) + thin TypeScript and Python SDKs
+- [x] P4.6 Terms of service, DPA, retention statement (accurate to actual R2/D1 retention)
+- [ ] P4.7 First paying key — end-to-end validation (blocked on provider decision — Stripe vs RazorPay — and account keys)
 
 ## Phase 5: Extras (demand-driven)
 
@@ -130,6 +165,6 @@ Live in production (verified 2026-11-25, smoke-jobs 0 failures + independent re-
 
 ## Open decisions
 
-- API hostname: `api.c2pa.thecontrarian.in` vs a neutral product domain
-- Container engine: native Rust (preferred) vs Node `c2pa-node`
+- ~~API hostname~~ decided: `api.c2pa.thecontrarian.in` (live since 2026-11-26)
+- ~~Container engine~~ decided: native Rust — full rewrite of the container analysis pipeline in Rust (user decision 2026-11-26, aware that c2pa-node is already Rust-native underneath and that this forks the single-source parity guarantee; implementation tracked below)
 - ~~Sync size cap~~ decided: 20 MiB (see Phase 0 findings)
