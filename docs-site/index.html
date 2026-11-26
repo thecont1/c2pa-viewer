@@ -74,7 +74,7 @@ table.docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; m
 <p><strong>Base URL:</strong> <code>https://api.c2pa.thecontrarian.in</code> &nbsp;·&nbsp; <strong>OpenAPI 3.1:</strong> <code>GET /v1/openapi.json</code></p>
 
 <h2 id="quickstart">Quickstart</h2>
-<p>1. Get a free key at the <a href="/dashboard">dashboard</a> (1,000 verifications/month, no card required) or programmatically:</p>
+<p>1. Get a free key at the <a href="/dashboard">dashboard</a> (500 verifications/month, no card required) or programmatically:</p>
 <pre><code>curl -X POST https://api.c2pa.thecontrarian.in/v1/signup/free \
   -H 'content-type: application/json' \
   -d '{"turnstile_token": "&lt;token from the Turnstile widget&gt;"}'</code></pre>
@@ -97,10 +97,10 @@ table.docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; m
 
 <h2 id="tiers">Tiers &amp; quotas</h2>
 <table class="docs-table">
-<tr><th>Tier</th><th>Price</th><th>Verifications / month</th></tr>
-<tr><td>Free</td><td>$0</td><td>1,000</td></tr>
-<tr><td>Pro</td><td>$19/mo</td><td>25,000</td></tr>
-<tr><td>Scale</td><td>$99/mo</td><td>250,000</td></tr>
+<tr><th>Tier</th><th>Price</th><th>Verifications / month</th><th>Async jobs</th></tr>
+<tr><td>Free</td><td>$0</td><td>500</td><td>No — sync only</td></tr>
+<tr><td>Sync Only</td><td>$3.99/mo or $47.99/yr per unit</td><td>10,000 per unit, in multiples up to 100×</td><td>No — sync only</td></tr>
+<tr><td>Sync+Async</td><td>$9.99/mo or $99.99/yr per unit</td><td>25,000 per unit, in multiples up to 100×</td><td>Yes</td></tr>
 </table>
 <p>Quotas are hard caps enforced atomically per key. A verification counts when it succeeds (sync) or is accepted (async jobs); failed verifications and every test-key call are free. Exhaustion returns 429 <code>quota_exceeded</code>; the count resets on the UTC month boundary. Job submissions charge at acceptance — a job that later fails is not refunded.</p>
 

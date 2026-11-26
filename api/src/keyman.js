@@ -15,7 +15,7 @@ import { problem } from './errors.js';
 import { generateKey, sha256HexText, parseJsonArray } from './keys-mw.js';
 import { getUsage, currentMonth } from './db.js';
 
-const TIER_QUOTAS = { free: 1000, pro: 25000, scale: 250000 };
+const TIER_QUOTAS = { free: 500 };
 
 function nowIso() { return new Date().toISOString(); }
 

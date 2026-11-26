@@ -7,9 +7,9 @@ const API = 'https://api.c2pa.thecontrarian.in';
 const TURNSTILE_SITEKEY = '0x4AAAAAAGTefC4DoXlf2sZ7';
 
 const TIERS = [
-    { id: 'free', name: 'Free', price: 0, quota: '1,000', blurb: 'Evaluate and integrate' },
-    { id: 'pro', name: 'Pro', price: 19, quota: '25,000', blurb: 'Production workloads', featured: true },
-    { id: 'scale', name: 'Scale', price: 99, quota: '250,000', blurb: 'High-volume pipelines' },
+    { id: 'free', name: 'Free', price: 0, quota: '500', blurb: 'Personal projects and evaluation — sync verification' },
+    { id: 'sync_only', name: 'Sync Only', price: 3.99, annual: 47.99, quota: '10,000', unit: true, blurb: 'Sync verification, sold in multiples of 10,000/month' },
+    { id: 'sync_async', name: 'Sync+Async', price: 9.99, annual: 99.99, quota: '25,000', unit: true, blurb: 'Sync + async jobs with webhooks, sold in multiples of 25,000/month', featured: true },
 ];
 
 const app = document.getElementById('app');
@@ -259,10 +259,23 @@ async function dashboardView() {
       <h2>Plan &amp; billing</h2>
       <div class="dash-row">
         ${(k.billing_status && k.billing_status !== 'none' && k.billing_status !== 'canceled')
-        ? `<button class="btn" id="portal-btn">Manage billing</button>
-           ${k.tier === 'pro' ? '<button class="btn btn-quiet" data-upgrade="scale">Upgrade to Scale — $99/mo</button>' : ''}`
-        : `<button class="btn" data-upgrade="pro">Upgrade to Pro — $19/mo</button>
-          <button class="btn btn-quiet" data-upgrade="scale">Scale — $99/mo</button>`}
+        ? `<button class="btn" id="portal-btn">Manage billing</button>`
+        : `<div class="upgrade-picker">
+             <label>Tier
+               <select id="up-tier">
+                 <option value="sync_async">Sync+Async — $9.99/mo per 25,000</option>
+                 <option value="sync_only">Sync Only — $3.99/mo per 10,000</option>
+               </select></label>
+             <label>Units
+               <select id="up-units">${[1, 2, 3, 4, 5, 10, 20].map((n) => `<option value="${n}"${n === 1 ? ' selected' : ''}>${n}×</option>`).join('')}</select></label>
+             <label>Period
+               <select id="up-period">
+                 <option value="month">Monthly</option>
+                 <option value="year">Annual — one month free</option>
+               </select></label>
+             <button class="btn" id="up-go">Upgrade</button>
+           </div>
+           <p class="dash-muted" id="up-summary"></p>`}
       </div>
       <div id="billing-status"></div>
     </div>
@@ -299,8 +312,29 @@ async function dashboardView() {
       <div id="keyman-status"></div>
     </div>`);
 
-    for (const btn of document.querySelectorAll('[data-upgrade]')) {
-        btn.onclick = () => upgradeFlow(btn.dataset.upgrade, key);
+    const upGo = document.getElementById('up-go');
+    if (upGo) {
+        const summary = document.getElementById('up-summary');
+        const updateSummary = () => {
+            const tier = document.getElementById('up-tier').value;
+            const units = Number(document.getElementById('up-units').value);
+            const period = document.getElementById('up-period').value;
+            const t = TIERS.find((x) => x.id === tier);
+            if (!t) return;
+            const unitQuota = Number(t.quota.replace(/,/g, ''));
+            const price = period === 'year' ? t.annual * units : t.price * units;
+            summary.textContent = `${(unitQuota * units).toLocaleString('en-US')} verifications/month — $${price.toFixed(2)}/${period === 'year' ? 'yr' : 'mo'}`;
+        };
+        for (const id of ['up-tier', 'up-units', 'up-period']) {
+            document.getElementById(id).onchange = updateSummary;
+        }
+        updateSummary();
+        upGo.onclick = () => upgradeFlow(
+            document.getElementById('up-tier').value,
+            key,
+            Number(document.getElementById('up-units').value),
+            document.getElementById('up-period').value,
+        );
     }
     const portalBtn = document.getElementById('portal-btn');
     if (portalBtn) portalBtn.onclick = async () => {
@@ -316,10 +350,10 @@ async function dashboardView() {
     document.getElementById('revoke-btn').onclick = () => revokeFlow(key);
 }
 
-async function upgradeFlow(tier, key) {
+async function upgradeFlow(tier, key, units = 1, period = 'month') {
     const zone = document.getElementById('billing-status');
     zone.innerHTML = '<p class="dash-muted">Opening secure checkout…</p>';
-    const r = await api('/v1/billing/checkout', { method: 'POST', key, body: { tier } });
+    const r = await api('/v1/billing/checkout', { method: 'POST', key, body: { tier, units, period } });
     if (r.status === 201 && r.json && r.json.checkout_url) window.location.href = r.json.checkout_url;
     else zone.innerHTML = errorBox((r.json && r.json.detail) || 'Checkout unavailable.');
 }

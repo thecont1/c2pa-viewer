@@ -22,13 +22,38 @@
 import { problem } from './errors.js';
 import { generateKey, sha256HexText } from './keys-mw.js';
 
-const TIER_QUOTAS = { free: 1000, pro: 25000, scale: 250000 };
+// Tier model (2026-11 restructure): free is flat; the paid tiers sell in
+// MULTIPLES of a unit quota — quota_monthly = subscription quantity x unit.
+// sync_only forbids async jobs entirely (async verification costs an order
+// of magnitude more per unit — see the pricing analysis); sync_async is the
+// mixed tier. Annual and monthly are separate Stripe prices of the same tier.
+const TIER_UNIT_QUOTAS = { sync_only: 10000, sync_async: 25000 };
+const FREE_QUOTA = 500;
+const TIER_QUOTAS = { free: FREE_QUOTA, sync_only: TIER_UNIT_QUOTAS.sync_only, sync_async: TIER_UNIT_QUOTAS.sync_async };
+const PAID_TIERS = ['sync_only', 'sync_async'];
+const MAX_UNITS = 100;
+const PRICE_ENVS = {
+    sync_only: { month: 'STRIPE_PRICE_SYNC_MONTHLY', year: 'STRIPE_PRICE_SYNC_ANNUAL' },
+    sync_async: { month: 'STRIPE_PRICE_ASYNC_MONTHLY', year: 'STRIPE_PRICE_ASYNC_ANNUAL' },
+};
 const STRIPE_API = 'https://api.stripe.com/v1';
+
+function quotaFor(tier, units) {
+    if (tier === 'free') return FREE_QUOTA;
+    const unit = TIER_UNIT_QUOTAS[tier];
+    if (!unit) return FREE_QUOTA;
+    const u = Math.max(1, Math.min(MAX_UNITS, Math.floor(units) || 1));
+    return unit * u;
+}
 
 function nowIso() { return new Date().toISOString(); }
 
 export function billingConfigured(env) {
-    return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_PRO && env.STRIPE_PRICE_SCALE);
+    if (!env.STRIPE_SECRET_KEY) return false;
+    for (const tier of PAID_TIERS) {
+        if (!env[PRICE_ENVS[tier].month] || !env[PRICE_ENVS[tier].year]) return false;
+    }
+    return true;
 }
 
 function notConfigured() {
@@ -64,13 +89,16 @@ function encodeParams(params, prefix) {
     return parts.filter(Boolean).join('&');
 }
 
-function priceForTier(env, tier) {
-    return tier === 'pro' ? env.STRIPE_PRICE_PRO : tier === 'scale' ? env.STRIPE_PRICE_SCALE : null;
+function priceForTier(env, tier, period) {
+    const envs = PRICE_ENVS[tier];
+    if (!envs) return null;
+    return env[period === 'year' ? envs.year : envs.month] || null;
 }
 
 function tierForPrice(env, priceId) {
-    if (priceId === env.STRIPE_PRICE_PRO) return 'pro';
-    if (priceId === env.STRIPE_PRICE_SCALE) return 'scale';
+    for (const tier of PAID_TIERS) {
+        if (priceId === env[PRICE_ENVS[tier].month] || priceId === env[PRICE_ENVS[tier].year]) return tier;
+    }
     return null;
 }
 
@@ -83,8 +111,13 @@ export async function checkoutHandler(c) {
         return problem(422, 'invalid_request', { detail: 'request body must be JSON' });
     }
     const tier = body && body.tier;
-    if (tier !== 'pro' && tier !== 'scale') {
-        return problem(422, 'invalid_request', { detail: 'tier must be pro or scale' });
+    if (!PAID_TIERS.includes(tier)) {
+        return problem(422, 'invalid_request', { detail: 'tier must be sync_only or sync_async' });
+    }
+    const period = body && body.period === 'year' ? 'year' : 'month';
+    let units = body && body.units !== undefined ? Math.floor(Number(body.units)) : 1;
+    if (!Number.isSafeInteger(units) || units < 1 || units > MAX_UNITS) {
+        return problem(422, 'invalid_request', { detail: `units must be an integer between 1 and ${MAX_UNITS}` });
     }
 
     // Optional key auth: an authenticated caller upgrades in place; an
@@ -120,11 +153,13 @@ export async function checkoutHandler(c) {
     const base = (c.env.DASHBOARD_BASE_URL || 'https://c2pa.thecontrarian.in').replace(/\/$/, '');
     const params = {
         mode: 'subscription',
-        line_items: { 0: { price: priceForTier(c.env, tier), quantity: 1 } },
+        line_items: { 0: { price: priceForTier(c.env, tier, period), quantity: units } },
         success_url: `${base}/dashboard#/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${base}/dashboard#/checkout/cancel`,
         'metadata[tier]': tier,
+        'metadata[units]': String(units),
         'subscription_data[metadata][tier]': tier,
+        'subscription_data[metadata][units]': String(units),
         allow_promotion_codes: 'true',
     };
     if (keyRow) {
@@ -183,7 +218,7 @@ export async function revealHandler(c) {
         return problem(402, 'payment_required', { detail: 'this checkout session is not yet paid' });
     }
     const tier = session.metadata && session.metadata.tier;
-    if (!tier || !TIER_QUOTAS[tier]) {
+    if (!tier || !PAID_TIERS.includes(tier)) {
         console.error('reveal: session missing tier metadata', sessionId);
         return problem(500, 'internal_error', { detail: 'checkout session is malformed — contact support' });
     }
@@ -197,8 +232,11 @@ export async function revealHandler(c) {
     // canceled status so the customer still gets what they paid for
     // historically but no entitlement confusion arises.
     let billingStatus = 'active';
+    let units = 1;
     try {
         const sub = await stripe(c.env, 'GET', `/subscriptions/${encodeURIComponent(session.subscription)}`);
+        const item = sub && sub.items && sub.items.data && sub.items.data[0];
+        if (item && item.quantity) units = item.quantity;
         if (sub && (sub.status === 'canceled' || sub.status === 'incomplete_expired')) {
             // Terminal: no entitlement beyond free, no restoration path.
             billingStatus = 'canceled';
@@ -226,7 +264,7 @@ export async function revealHandler(c) {
             `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, created_at,
                                stripe_customer_id, stripe_subscription_id, billing_status, checkout_session_id, checkout_revealed_at)
              VALUES (?, ?, ?, ?, 'server', ?, '["verify"]', ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(id, hash, displayPrefix, `stripe-${sessionId.slice(-8)}`, effectiveTier, TIER_QUOTAS[effectiveTier], now,
+        ).bind(id, hash, displayPrefix, `stripe-${sessionId.slice(-8)}`, effectiveTier, effectiveTier === 'free' ? FREE_QUOTA : quotaFor(effectiveTier, units), now,
             session.customer || null, session.subscription, billingStatus, sessionId, now).run();
     } catch (e) {
         // Unique-index race: a concurrent reveal already provisioned it.
@@ -265,7 +303,7 @@ export async function revealHandler(c) {
         key: plaintext,
         display_prefix: displayPrefix,
         tier: (billingStatus === 'canceled' || billingStatus === 'unpaid') ? 'free' : tier,
-        quota_monthly: TIER_QUOTAS[(billingStatus === 'canceled' || billingStatus === 'unpaid') ? 'free' : tier],
+        quota_monthly: (billingStatus === 'canceled' || billingStatus === 'unpaid') ? FREE_QUOTA : quotaFor(tier, units),
         created_at: now,
         notice: 'Store this key now — it is shown exactly once and cannot be recovered.',
     }, { status: 201 });
@@ -352,7 +390,7 @@ async function verifyStripeSignature(secret, header, rawBody) {
     return false;
 }
 
-async function provisionUpgrade(db, keyId, tier, customerId, subscriptionId) {
+async function provisionUpgrade(db, keyId, tier, customerId, subscriptionId, units) {
     // Stripe redelivers events: a duplicate or out-of-order
     // checkout.session.completed must not resurrect a key whose subscription
     // was already canceled — canceled is terminal everywhere else in the
@@ -361,7 +399,7 @@ async function provisionUpgrade(db, keyId, tier, customerId, subscriptionId) {
     await db.prepare(
         `UPDATE keys SET tier = ?, quota_monthly = ?, stripe_customer_id = ?, stripe_subscription_id = ?, billing_status = 'active'
          WHERE id = ? AND (billing_status IS NULL OR billing_status != 'canceled')`
-    ).bind(tier, TIER_QUOTAS[tier], customerId, subscriptionId, keyId).run();
+    ).bind(tier, quotaFor(tier, units), customerId, subscriptionId, keyId).run();
 }
 
 export async function webhookHandler(c) {
@@ -387,17 +425,22 @@ export async function webhookHandler(c) {
                 const subId = obj.subscription;
                 const customerId = obj.customer;
                 const tier = (obj.metadata && obj.metadata.tier) || null;
-                if (!subId || !tier || !TIER_QUOTAS[tier]) break;
+                if (!subId || !tier || !PAID_TIERS.includes(tier)) break;
                 // Only the upgrade path provisions here — keyless keys are
                 // created at reveal time and never touch the webhook.
                 const keyId = obj.metadata && obj.metadata.key_id;
-                if (keyId) await provisionUpgrade(c.env.DB, keyId, tier, customerId, subId);
+                const units = obj.metadata && obj.metadata.units ? Number(obj.metadata.units) : 1;
+                if (keyId) await provisionUpgrade(c.env.DB, keyId, tier, customerId, subId, units);
                 break;
             }
             case 'customer.subscription.updated': {
-                const priceId = obj.items && obj.items.data && obj.items.data[0] && obj.items.data[0].price && obj.items.data[0].price.id;
+                const item = obj.items && obj.items.data && obj.items.data[0];
+                const priceId = item && item.price && item.price.id;
                 const tier = priceId ? tierForPrice(c.env, priceId) : null;
                 if (!tier) break;
+                // Quantity is the subscription's own truth — customers can
+                // change unit count in the portal, and the quota follows.
+                const units = item && item.quantity ? item.quantity : 1;
                 // unpaid is stored distinctly from canceled: it carries free
                 // entitlement only, but a later active event restores the
                 // paid tier because the row is not terminal-skipped.
@@ -405,13 +448,14 @@ export async function webhookHandler(c) {
                     : obj.status === 'past_due' ? 'past_due'
                     : obj.status === 'unpaid' ? 'unpaid' : 'active';
                 const effectiveTier = status === 'unpaid' ? 'free' : tier;
+                const effectiveQuota = status === 'unpaid' ? FREE_QUOTA : quotaFor(tier, units);
                 // Stripe does not guarantee event ordering — an older
                 // subscription.updated arriving after subscription.deleted
                 // would resurrect the paid tier. Skip rows already terminally
                 // canceled for this subscription.
                 await c.env.DB.prepare(
                     `UPDATE keys SET tier = ?, quota_monthly = ?, billing_status = ? WHERE stripe_subscription_id = ? AND billing_status != 'canceled'`
-                ).bind(effectiveTier, TIER_QUOTAS[effectiveTier], status, obj.id).run();
+                ).bind(effectiveTier, effectiveQuota, status, obj.id).run();
                 break;
             }
             case 'customer.subscription.deleted': {

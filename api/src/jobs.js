@@ -270,6 +270,18 @@ export async function createJobHandler(c) {
     try { body = await c.req.json(); } catch {
         return problem(422, 'invalid_request', { detail: 'malformed JSON body' });
     }
+    // Async jobs are a sync_async-tier feature. The verification itself is
+    // the same engine either way — the gate exists because async delivery
+    // costs an order of magnitude more per verification (container time,
+    // object storage, webhook delivery) and the lower tiers are priced for
+    // the sync cost curve.
+    // Test keys bypass the tier gate: they exist for integration testing and
+    // are already confined to the fixture corpus.
+    const keyRow = c.get('keyRow');
+    const keyKind = c.get('keyKind') || 'live';
+    if (keyKind !== 'test' && (!keyRow || keyRow.tier !== 'sync_async')) {
+        return problem(403, 'forbidden', { detail: 'async jobs require a Sync+Async tier key — sync verification (POST /v1/verify) is available on all tiers' });
+    }
     try {
         const created = await createJobRecord(
             c.env, c.get('keyRow'), c.get('keyKind'), body, c.req.header('idempotency-key')
