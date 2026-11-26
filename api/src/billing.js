@@ -178,18 +178,40 @@ export async function revealHandler(c) {
         console.error('reveal: session missing tier metadata', sessionId);
         return problem(500, 'internal_error', { detail: 'checkout session is malformed — contact support' });
     }
+    // Upgrade sessions already have a key — they provision through the
+    // webhook, not reveal. Provisioning here would hand out a second key.
+    if (session.metadata && session.metadata.key_id) {
+        return problem(422, 'invalid_request', { detail: 'this checkout was an upgrade of an existing key — the key tier updates automatically' });
+    }
+    // A subscription canceled before the first reveal must not provision a
+    // key that silently bills/renews nothing — provision it free-tier with
+    // canceled status so the customer still gets what they paid for
+    // historically but no entitlement confusion arises.
+    let billingStatus = 'active';
+    try {
+        const sub = await stripe(c.env, 'GET', `/subscriptions/${encodeURIComponent(session.subscription)}`);
+        if (sub && (sub.status === 'canceled' || sub.status === 'incomplete_expired' || sub.status === 'unpaid')) {
+            billingStatus = 'canceled';
+        } else if (sub && sub.status === 'past_due') {
+            billingStatus = 'past_due';
+        }
+    } catch (e) {
+        console.error('reveal subscription lookup failed:', e);
+        return problem(502, 'billing_unavailable', { detail: 'billing provider error — retry shortly' });
+    }
 
     const { plaintext, displayPrefix } = generateKey('live');
     const hash = await sha256HexText(plaintext);
     const id = crypto.randomUUID();
     const now = nowIso();
     try {
+        const effectiveTier = billingStatus === 'canceled' ? 'free' : tier;
         await c.env.DB.prepare(
             `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, created_at,
                                stripe_customer_id, stripe_subscription_id, billing_status, checkout_session_id, checkout_revealed_at)
-             VALUES (?, ?, ?, ?, 'server', ?, '["verify"]', ?, ?, ?, ?, 'active', ?, ?)`
-        ).bind(id, hash, displayPrefix, `stripe-${sessionId.slice(-8)}`, tier, TIER_QUOTAS[tier], now,
-            session.customer || null, session.subscription, sessionId, now).run();
+             VALUES (?, ?, ?, ?, 'server', ?, '["verify"]', ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(id, hash, displayPrefix, `stripe-${sessionId.slice(-8)}`, effectiveTier, TIER_QUOTAS[effectiveTier], now,
+            session.customer || null, session.subscription, billingStatus, sessionId, now).run();
     } catch (e) {
         // Unique-index race: a concurrent reveal already provisioned it.
         if (String(e).includes('UNIQUE')) {
@@ -202,8 +224,8 @@ export async function revealHandler(c) {
     return Response.json({
         key: plaintext,
         display_prefix: displayPrefix,
-        tier,
-        quota_monthly: TIER_QUOTAS[tier],
+        tier: billingStatus === 'canceled' ? 'free' : tier,
+        quota_monthly: TIER_QUOTAS[billingStatus === 'canceled' ? 'free' : tier],
         created_at: now,
         notice: 'Store this key now — it is shown exactly once and cannot be recovered.',
     }, { status: 201 });
@@ -235,24 +257,33 @@ export async function portalHandler(c) {
 // with the webhook signing secret; 5-minute timestamp tolerance.
 async function verifyStripeSignature(secret, header, rawBody) {
     if (!header) return false;
-    const parts = Object.fromEntries(header.split(',').map((p) => {
+    // Stripe emits multiple v1 entries while webhook secrets rotate;
+    // Object.fromEntries would collapse them to the last one. Collect all
+    // and accept when any matches.
+    const parts = {};
+    const v1s = [];
+    for (const p of header.split(',')) {
         const i = p.indexOf('=');
-        return [p.slice(0, i), p.slice(i + 1)];
-    }));
+        const k = p.slice(0, i), v = p.slice(i + 1);
+        if (k === 'v1') v1s.push(v);
+        else parts[k] = v;
+    }
     const t = parts.t;
-    const v1 = parts.v1;
-    if (!t || !v1) return false;
+    if (!t || !v1s.length) return false;
     if (Math.abs(Date.now() / 1000 - Number(t)) > 300) return false;
 
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     const sig = await crypto.subtle.sign('HMAC', key, enc.encode(`${t}.${rawBody}`));
     const hex = [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
-    // Constant-time compare.
-    if (hex.length !== v1.length) return false;
-    let diff = 0;
-    for (let i = 0; i < hex.length; i++) diff |= hex.charCodeAt(i) ^ v1.charCodeAt(i);
-    return diff === 0;
+    // Constant-time compare against every candidate signature.
+    for (const v1 of v1s) {
+        if (hex.length !== v1.length) continue;
+        let diff = 0;
+        for (let i = 0; i < hex.length; i++) diff |= hex.charCodeAt(i) ^ v1.charCodeAt(i);
+        if (diff === 0) return true;
+    }
+    return false;
 }
 
 async function provisionUpgrade(db, keyId, tier, customerId, subscriptionId) {
@@ -297,8 +328,12 @@ export async function webhookHandler(c) {
                 const tier = priceId ? tierForPrice(c.env, priceId) : null;
                 if (!tier) break;
                 const status = obj.status === 'active' ? 'active' : obj.status === 'past_due' ? 'past_due' : 'active';
+                // Stripe does not guarantee event ordering — an older
+                // subscription.updated arriving after subscription.deleted
+                // would resurrect the paid tier. Skip rows already terminally
+                // canceled for this subscription.
                 await c.env.DB.prepare(
-                    `UPDATE keys SET tier = ?, quota_monthly = ?, billing_status = ? WHERE stripe_subscription_id = ?`
+                    `UPDATE keys SET tier = ?, quota_monthly = ?, billing_status = ? WHERE stripe_subscription_id = ? AND billing_status != 'canceled'`
                 ).bind(tier, TIER_QUOTAS[tier], status, obj.id).run();
                 break;
             }

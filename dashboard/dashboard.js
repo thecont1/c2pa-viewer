@@ -44,6 +44,11 @@ function fmtInt(n) { return n == null ? '—' : Number(n).toLocaleString('en-US'
 
 function render(html) { app.innerHTML = html; }
 
+// Session generation: sign-out and key invalidation bump it; async flows
+// capture it before awaiting and abandon their completion when it moved —
+// otherwise a slow response can re-render the dashboard after sign-out.
+let sessionGen = 0;
+
 function errorBox(msg) { return `<div class="dash-error">${esc(msg)}</div>`; }
 
 // ---------------------------------------------------------- welcome ----
@@ -188,14 +193,23 @@ async function dashboardView() {
     navSignout.hidden = false;
     render('<div class="dash-loading">Loading your dashboard…</div>');
 
+    const gen = sessionGen;
     const [keyInfo, usage, jobs] = await Promise.all([
         api('/v1/key', { key }),
         api('/v1/usage', { key }),
         api('/v1/jobs?limit=20', { key }),
     ]);
+    if (gen !== sessionGen) return; // signed out while loading
     if (keyInfo.status !== 200) {
-        setKey(null);
-        welcomeView();
+        // Only auth rejections invalidate the credential — transient 5xx or
+        // network failures must not sign the user out.
+        if (keyInfo.status === 401 || keyInfo.status === 403) {
+            setKey(null);
+            welcomeView();
+        } else {
+            render(errorBox('The API is temporarily unavailable — your key is still saved. Retry in a moment.') +
+                '<button class="btn" onclick="location.reload()">Retry</button>');
+        }
         return;
     }
     const k = keyInfo.json;
@@ -304,15 +318,23 @@ function rotateFlow(key) {
 function revokeFlow(key) {
     if (!confirm('Revoke this key permanently? This cannot be undone.')) return;
     (async () => {
-        await api('/v1/key/revoke', { method: 'POST', key });
-        setKey(null);
-        welcomeView();
+        const r = await api('/v1/key/revoke', { method: 'POST', key });
+        // Clearing the local copy while the server-side key is still live
+        // strands it — active but unrecoverable. Only drop it once the
+        // revocation is confirmed (or the key was already invalid).
+        if (r.status === 200 || r.status === 401 || r.status === 403) {
+            sessionGen++;
+            setKey(null);
+            welcomeView();
+        } else {
+            alert('Revocation failed — the key is still active. Retry or revoke it with keyctl.');
+        }
     })();
 }
 
 // ------------------------------------------------------------- boot ----
 
-navSignout.onclick = () => { setKey(null); welcomeView(); };
+navSignout.onclick = () => { sessionGen++; setKey(null); welcomeView(); };
 
 (function boot() {
     const hash = window.location.hash || '';

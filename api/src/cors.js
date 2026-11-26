@@ -80,8 +80,17 @@ export function isDashboardOrigin(env, origin) {
     let host;
     try { host = new URL(origin).host; } catch { return false; }
     for (const entry of list) {
-        if (entry.endsWith('*')) {
-            if (origin.startsWith(entry.slice(0, -1))) return true;
+        if (entry.includes('*')) {
+            // Wildcard entries match by HOST suffix, not string prefix —
+            // prefix matching lets https://api.example.com* admit
+            // https://api.example.com.evil.test. The host must equal the
+            // suffix base or end with "." + base, and the scheme must match.
+            const star = entry.indexOf('*');
+            const scheme = entry.slice(0, entry.indexOf('://') + 3);
+            if (!origin.startsWith(scheme)) continue;
+            const base = entry.slice(star + 1).replace(/^\./, '');
+            if (!base) continue;
+            if (host === base || host.endsWith('.' + base)) return true;
         } else if (origin === entry) return true;
     }
     if (host.endsWith(DASHBOARD_PREVIEW_SUFFIX) || host === DASHBOARD_PREVIEW_SUFFIX.slice(1)) return true;

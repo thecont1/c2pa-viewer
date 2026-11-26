@@ -97,9 +97,14 @@ async function create(args) {
     if (args.quota !== undefined) {
         // parseInt silently truncates junk ('0.5' -> 0, '500junk' -> 500);
         // require a complete non-negative integer representation first.
-        if (!/^\d+$/.test(String(args.quota).trim())) die('--quota must be a non-negative integer');
-        quota = Number(String(args.quota).trim());
-        if (!Number.isSafeInteger(quota)) die('--quota must be a non-negative integer');
+        const rawQuota = String(args.quota).trim().toLowerCase();
+        if (rawQuota === 'unlimited' || rawQuota === 'none' || rawQuota === 'null') {
+            quota = null; // NULL quota_monthly = unmetered key
+        } else {
+            if (!/^\d+$/.test(rawQuota)) die('--quota must be a non-negative integer or "unlimited"');
+            quota = Number(rawQuota);
+            if (!Number.isSafeInteger(quota)) die('--quota must be a non-negative integer or "unlimited"');
+        }
     } else {
         // Tier defaults match the Phase 4 pricing (2026-11-26): free 1k/mo,
         // pro 25k/mo, scale 250k/mo. NULL stays available as an explicit

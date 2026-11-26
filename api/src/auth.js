@@ -106,7 +106,7 @@ export async function optionalAuthMw(c, next) {
         await next();
         return;
     }
-    await authMw(c, next);
+    return await authMw(c, next);
 }
 
 export async function authMw(c, next) {

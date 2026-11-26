@@ -160,19 +160,65 @@ export async function rotateKeyHandler(c) {
     const hash = await sha256HexText(plaintext);
     const id = crypto.randomUUID();
     const now = nowIso();
+    // Rotation must not launder quota: the QuotaCounter keys usage by key id,
+    // so a fresh id would restart the month at zero. Carry the predecessor's
+    // current-month usage into the successor's ledger row — the QuotaCounter
+    // seeds first-touch state from exactly this row, so the allowance follows
+    // the customer rather than the secret.
+    const month = now.slice(0, 7);
+    let carriedUsage = 0;
     try {
-        await c.env.DB.batch([
-            c.env.DB.prepare(
-                `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, created_at, rotated_at, stripe_customer_id, stripe_subscription_id, billing_status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            ).bind(
-                id, hash, displayPrefix, row.name, row.type, row.tier, row.scopes,
-                row.quota_monthly, row.allowed_origins, now, now,
-                row.stripe_customer_id || null, row.stripe_subscription_id || null,
-                row.billing_status || 'none'
-            ),
-            c.env.DB.prepare('UPDATE keys SET revoked_at = ? WHERE id = ?').bind(now, row.id),
-        ]);
+        const usageRow = await c.env.DB.prepare(
+            'SELECT verify_count, bytes_total FROM usage WHERE key_id = ? AND month = ?'
+        ).bind(row.id, month).first();
+        if (usageRow) carriedUsage = usageRow.verify_count || 0;
+    } catch (e) {
+        console.error('rotation usage carry read failed:', e);
+        return problem(500, 'internal_error', { detail: 'usage store unavailable' });
+    }
+    const statements = [
+        c.env.DB.prepare(
+            `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, created_at, rotated_at, stripe_customer_id, stripe_subscription_id, billing_status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+            id, hash, displayPrefix, row.name, row.type, row.tier, row.scopes,
+            row.quota_monthly, row.allowed_origins, now, now,
+            row.stripe_customer_id || null, row.stripe_subscription_id || null,
+            row.billing_status || 'none'
+        ),
+        // Conditional revoke: a concurrent rotation that already revoked this
+        // key changes zero rows here, which we detect below — the loser must
+        // not leave a second live successor behind.
+        c.env.DB.prepare('UPDATE keys SET revoked_at = ?, stripe_customer_id = NULL, stripe_subscription_id = NULL WHERE id = ? AND revoked_at IS NULL').bind(now, row.id),
+    ];
+    if (carriedUsage > 0) {
+        const usageRowPrev = await c.env.DB.prepare(
+            'SELECT bytes_total FROM usage WHERE key_id = ? AND month = ?'
+        ).bind(row.id, month).first();
+        statements.push(c.env.DB.prepare(
+            `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (key_id, month) DO UPDATE SET
+               verify_count = MAX(verify_count, excluded.verify_count),
+               bytes_total  = bytes_total + excluded.bytes_total,
+               updated_at   = excluded.updated_at`
+        ).bind(id, month, carriedUsage, (usageRowPrev && usageRowPrev.bytes_total) || 0, now));
+    }
+    try {
+        const results = await c.env.DB.batch(statements);
+        const revokeResult = results[1];
+        if (!revokeResult || (revokeResult.meta && revokeResult.meta.changes === 0)) {
+            // Lost the race — the original key was already revoked by a
+            // concurrent rotation. Remove the successor we just inserted so
+            // exactly one live successor exists, and fail the request.
+            try {
+                await c.env.DB.prepare('DELETE FROM keys WHERE id = ?').bind(id).run();
+                await c.env.DB.prepare('DELETE FROM usage WHERE key_id = ? AND month = ?').bind(id, month).run();
+            } catch (cleanupErr) {
+                console.error('rotation race cleanup failed:', cleanupErr);
+            }
+            return problem(409, 'conflict', { detail: 'key was already rotated — use the successor issued by the first rotation' });
+        }
     } catch (e) {
         console.error('key rotation failed:', e);
         return problem(500, 'internal_error', { detail: 'rotation failed' });
