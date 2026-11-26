@@ -694,7 +694,7 @@ paths:
                   key: { type: string, example: c2pa_live_… }
                   display_prefix: { type: string }
                   tier: { type: string, enum: [free] }
-                  quota_monthly: { type: integer, example: 1000 }
+                  quota_monthly: { type: integer, example: 500 }
                   created_at: { type: string }
                   notice: { type: string }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -716,7 +716,7 @@ paths:
                   display_prefix: { type: string }
                   name: { type: [string, "null"] }
                   type: { type: string, enum: [server, browser] }
-                  tier: { type: string, enum: [free, pro, scale] }
+                  tier: { type: string, enum: [free, sync_only, sync_async] }
                   scopes: { type: array, items: { type: string } }
                   quota_monthly: { type: [integer, "null"] }
                   billing_status: { type: string, enum: [none, active, past_due, unpaid, canceled] }
@@ -811,7 +811,20 @@ paths:
               type: object
               required: [tier]
               properties:
-                tier: { type: string, enum: [pro, scale] }
+                tier: { type: string, enum: [sync_only, sync_async] }
+                units:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 1
+                  description: >-
+                    Quota units — quota_monthly = units x 10,000 (sync_only) or
+                    units x 25,000 (sync_async). Changeable later via the
+                    customer portal's quantity selector.
+                period:
+                  type: string
+                  enum: [month, year]
+                  default: month
                 turnstile_token: { type: string }
       responses:
         '201':

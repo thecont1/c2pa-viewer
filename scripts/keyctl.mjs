@@ -2,7 +2,7 @@
 // keyctl — API key admin CLI for c2pa-verify-api.
 //
 //   bun scripts/keyctl.mjs create --name X [--type server|browser]
-//        [--tier free|pro|scale] [--quota N] [--origins a,b]
+//        [--tier free|sync_only|sync_async] [--quota N] [--origins a,b]
 //        [--scopes verify,mini] [--test] [--remote]
 //   bun scripts/keyctl.mjs list [--remote]
 //   bun scripts/keyctl.mjs revoke --id <uuid> [--remote]
@@ -85,7 +85,7 @@ async function create(args) {
     const type = args.type || 'server';
     if (!['server', 'browser'].includes(type)) die('--type must be server|browser');
     const tier = args.tier || 'free';
-    if (!['free', 'pro', 'scale'].includes(tier)) die('--tier must be free|pro|scale');
+    if (!['free', 'sync_only', 'sync_async'].includes(tier)) die('--tier must be free|sync_only|sync_async');
 
     const kind = args.test ? 'test' : 'live';
     const { plaintext, displayPrefix } = generateKey(kind);
@@ -109,7 +109,7 @@ async function create(args) {
         // Tier defaults match the Phase 4 pricing (2026-11-26): free 1k/mo,
         // pro 25k/mo, scale 250k/mo. NULL stays available as an explicit
         // admin override (--quota) for grandfathered or arrangement keys.
-        quota = { free: 1000, pro: 25000, scale: 250000 }[tier];
+        quota = { free: 500, sync_only: 10000, sync_async: 25000 }[tier];
     }
 
     let scopes = null;

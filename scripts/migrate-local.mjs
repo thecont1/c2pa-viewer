@@ -37,4 +37,13 @@ export function applyLocalMigrations(apiDir) {
     // 0004/0005 are IF NOT EXISTS throughout — unconditionally safe.
     run(['--file', 'migrations/0004_quota_receipts.sql']);
     run(['--file', 'migrations/0005_turnstile_tokens.sql']);
+
+    // 0006 rebuilds the keys table to swap the tier CHECK constraint;
+    // re-running it is harmless but wasteful, so gate on the old constraint.
+    const schema = run(['--command', "SELECT sql FROM sqlite_master WHERE name = 'keys';", '--json']);
+    const schemaParsed = JSON.parse(schema);
+    const tableSql = ((schemaParsed[0] && schemaParsed[0].results) || []).map((r) => r.sql).join('');
+    if (tableSql.includes("'pro'")) {
+        run(['--file', 'migrations/0006_tier_names.sql']);
+    }
 }

@@ -222,8 +222,8 @@ async function main() {
 
     console.log('== seeding local D1 ==');
     applyLocalMigrations(API_DIR);
-    const server = keyctl(['create', '--name', 'mcp-smoke-server', '--type', 'server', '--tier', 'pro']);
-    const meter = keyctl(['create', '--name', 'mcp-smoke-meter', '--type', 'server', '--tier', 'pro']);
+    const server = keyctl(['create', '--name', 'mcp-smoke-server', '--type', 'server', '--tier', 'sync_async']);
+    const meter = keyctl(['create', '--name', 'mcp-smoke-meter', '--type', 'server', '--tier', 'sync_async']);
     const quota = keyctl(['create', '--name', 'mcp-smoke-quota', '--type', 'server', '--tier', 'free']);
     const testKey = keyctl(['create', '--name', 'mcp-smoke-test', '--type', 'server', '--tier', 'free', '--test']);
     const revoked = keyctl(['create', '--name', 'mcp-smoke-revoked', '--type', 'server', '--tier', 'free']);

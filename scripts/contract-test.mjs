@@ -592,10 +592,10 @@ async function main() {
 
     console.log('\n== seeding local D1 ==');
     applyLocalMigrations(API_DIR);
-    const server = keyctl(['create', '--name', 'contract-server', '--type', 'server', '--tier', 'free']);
+    const server = keyctl(['create', '--name', 'contract-server', '--type', 'server', '--tier', 'sync_async']);
     const revoked = keyctl(['create', '--name', 'contract-revoked', '--type', 'server', '--tier', 'free']);
     spawnSync('bun', ['scripts/keyctl.mjs', 'revoke', '--id', revoked.id], { cwd: ROOT, encoding: 'utf8' });
-    const rate = keyctl(['create', '--name', 'contract-rate', '--type', 'server', '--tier', 'pro']);
+    const rate = keyctl(['create', '--name', 'contract-rate', '--type', 'server', '--tier', 'sync_async']);
     const keys = { server, revoked, rate };
     console.log('  keys seeded (server/revoked/rate)');
 

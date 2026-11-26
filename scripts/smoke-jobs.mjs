@@ -212,9 +212,9 @@ async function main() {
     if (!keyA || !keyB) {
         // Register each key for cleanup the moment it exists: if the second
         // creation fails, the first must not be left active remotely.
-        const a = keyctl(['create', '--name', `phase3-smoke-${Date.now()}-a`, '--type', 'server', '--tier', 'pro', '--remote']);
+        const a = keyctl(['create', '--name', `phase3-smoke-${Date.now()}-a`, '--type', 'server', '--tier', 'sync_async', '--remote']);
         keyA = a.key; createdKeyIds.push(a.id);
-        const b = keyctl(['create', '--name', `phase3-smoke-${Date.now()}-b`, '--type', 'server', '--tier', 'pro', '--remote']);
+        const b = keyctl(['create', '--name', `phase3-smoke-${Date.now()}-b`, '--type', 'server', '--tier', 'sync_async', '--remote']);
         keyB = b.key; createdKeyIds.push(b.id);
         console.log('created temporary remote smoke keys (will revoke in cleanup)');
     }

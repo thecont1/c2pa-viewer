@@ -304,7 +304,7 @@ async function seedKeyPool(count) {
         const hash = await sha256HexText(plaintext);
         const id = crypto.randomUUID();
         keys.push({ plaintext, id, displayPrefix });
-        rows.push(`(${sqlQuote(id)}, ${sqlQuote(hash)}, ${sqlQuote(displayPrefix)}, ${sqlQuote(`load-worker-${i + 1}`)}, 'server', 'pro', '["verify"]', NULL, NULL, ${sqlQuote(now)})`);
+        rows.push(`(${sqlQuote(id)}, ${sqlQuote(hash)}, ${sqlQuote(displayPrefix)}, ${sqlQuote(`load-worker-${i + 1}`)}, 'server', 'sync_async', '["verify"]', NULL, NULL, ${sqlQuote(now)})`);
     }
     d1(['--command', `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, created_at) VALUES ${rows.join(',')};`]);
     return keys;
@@ -330,7 +330,7 @@ async function main() {
 
     console.log('== seeding local D1 ==');
     d1(['--file', 'migrations/0001_init.sql']);
-    const primary = keyctl(['create', '--name', 'load-primary', '--type', 'server', '--tier', 'pro']);
+    const primary = keyctl(['create', '--name', 'load-primary', '--type', 'server', '--tier', 'sync_async']);
     const workerKeys = await seedKeyPool(25);
     console.log('  primary key + 25 worker keys seeded (plaintext keys not printed)');
 
