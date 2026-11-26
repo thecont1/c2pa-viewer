@@ -128,6 +128,15 @@ export async function checkoutHandler(c) {
         allow_promotion_codes: 'true',
     };
     if (keyRow) {
+        // One subscription per key: a key with a live billing relationship
+        // (active, past_due or unpaid — anything the webhook lifecycle still
+        // manages) checking out again would stack a second subscription the
+        // customer cannot see or manage. Direct them to the portal instead.
+        // canceled rows are terminal and MAY check out again.
+        if (keyRow.stripe_subscription_id
+            && (keyRow.billing_status === 'active' || keyRow.billing_status === 'past_due' || keyRow.billing_status === 'unpaid')) {
+            return problem(409, 'conflict', { detail: 'this key already has a subscription — use the billing portal to manage it' });
+        }
         params['metadata[key_id]'] = keyRow.id;
         params['subscription_data[metadata][key_id]'] = keyRow.id;
         if (keyRow.stripe_customer_id) params.customer = keyRow.stripe_customer_id;
@@ -228,6 +237,30 @@ export async function revealHandler(c) {
         return problem(500, 'internal_error', { detail: 'key provisioning failed — contact support' });
     }
 
+    // The subscription read above predates the insert commit; a cancellation
+    // landing in that gap would already have fired its webhook against zero
+    // rows, leaving this key with a stale paid entitlement. Re-read once
+    // after insertion — a cancellation visible now corrects the row in the
+    // same request.
+    if (billingStatus === 'active' || billingStatus === 'past_due') {
+        try {
+            const subNow = await stripe(c.env, 'GET', `/subscriptions/${encodeURIComponent(session.subscription)}`);
+            if (subNow && (subNow.status === 'canceled' || subNow.status === 'incomplete_expired')) {
+                await c.env.DB.prepare(
+                    `UPDATE keys SET tier = 'free', quota_monthly = ?, billing_status = 'canceled' WHERE id = ?`
+                ).bind(TIER_QUOTAS.free, id).run();
+            } else if (subNow && subNow.status === 'unpaid') {
+                await c.env.DB.prepare(
+                    `UPDATE keys SET tier = 'free', quota_monthly = ?, billing_status = 'unpaid' WHERE id = ?`
+                ).bind(TIER_QUOTAS.free, id).run();
+            }
+        } catch (e) {
+            // The webhook lifecycle still converges the row in the common
+            // case — log and continue rather than failing the reveal.
+            console.error('post-insert subscription re-read failed:', e);
+        }
+    }
+
     return Response.json({
         key: plaintext,
         display_prefix: displayPrefix,
@@ -320,9 +353,14 @@ async function verifyStripeSignature(secret, header, rawBody) {
 }
 
 async function provisionUpgrade(db, keyId, tier, customerId, subscriptionId) {
+    // Stripe redelivers events: a duplicate or out-of-order
+    // checkout.session.completed must not resurrect a key whose subscription
+    // was already canceled — canceled is terminal everywhere else in the
+    // lifecycle. billing_status IS NULL rows (pre-billing keys) provision
+    // normally.
     await db.prepare(
         `UPDATE keys SET tier = ?, quota_monthly = ?, stripe_customer_id = ?, stripe_subscription_id = ?, billing_status = 'active'
-         WHERE id = ?`
+         WHERE id = ? AND (billing_status IS NULL OR billing_status != 'canceled')`
     ).bind(tier, TIER_QUOTAS[tier], customerId, subscriptionId, keyId).run();
 }
 

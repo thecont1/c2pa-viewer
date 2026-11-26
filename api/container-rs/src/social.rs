@@ -2,13 +2,23 @@
 
 use serde_json::{Map, Value};
 
-fn insert_link(out: &mut Map<String, Value>, _key: &str, id: &str) {
-    let lower = id.to_lowercase();
-    if lower.contains("instagram.com") {
+// Classify by parsed hostname: the exact social domain or a subdomain of it
+// (dot boundary). Substring matching classified evilinstagram.com and
+// instagram.com.evil.test as genuine social links.
+fn host_matches(host: &str, domain: &str) -> bool {
+    host == domain || host.strip_suffix(domain).is_some_and(|pre| pre.ends_with('.'))
+}
+
+fn insert_link(out: &mut Map<String, Value>, id: &str) {
+    let host = match url::Url::parse(id) {
+        Ok(u) => u.host_str().unwrap_or("").to_lowercase(),
+        Err(_) => return,
+    };
+    if host_matches(&host, "instagram.com") {
         out.entry("instagram").or_insert_with(|| Value::String(id.to_string()));
-    } else if lower.contains("twitter.com") || lower.contains("x.com") {
+    } else if host_matches(&host, "twitter.com") || host_matches(&host, "x.com") {
         out.entry("twitter").or_insert_with(|| Value::String(id.to_string()));
-    } else if lower.contains("linkedin.com") {
+    } else if host_matches(&host, "linkedin.com") {
         out.entry("linkedin").or_insert_with(|| Value::String(id.to_string()));
     }
 }
@@ -22,7 +32,7 @@ pub fn extract_social_links(assertion_data: &Value) -> Map<String, Value> {
         for author in authors {
             if let Some(id) = author.get("@id").and_then(|v| v.as_str()) {
                 if !id.is_empty() {
-                    insert_link(&mut out, "", id);
+                    insert_link(&mut out, id);
                 }
             }
         }
@@ -54,12 +64,12 @@ pub fn extract_social_links(assertion_data: &Value) -> Map<String, Value> {
         }
     }
     if let Some(Value::String(url)) = assertion_data.get("url") {
-        insert_link(&mut out, "", url);
+        insert_link(&mut out, url);
     }
     if let Some(Value::Array(urls)) = assertion_data.get("url") {
         for url in urls {
             if let Some(u) = url.as_str() {
-                insert_link(&mut out, "", u);
+                insert_link(&mut out, u);
             }
         }
     }

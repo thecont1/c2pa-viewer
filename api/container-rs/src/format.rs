@@ -30,8 +30,26 @@ pub fn format_datetime_full(dt_string: &str, include_timezone: bool) -> String {
     if dt_string.is_empty() || dt_string == "Unknown" {
         return "Unknown".to_string();
     }
-    // ISO 8601 (contains 'T')
+    // ISO 8601 (contains 'T'). RFC 3339 values bearing an offset are
+    // instants: convert to UTC before rendering, exactly as the JS
+    // reference does through new Date() under TZ=UTC. Offsetless forms
+    // fall through to field extraction, which treats them as UTC — the
+    // same reading ECMAScript gives them.
     if dt_string.contains('T') {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(dt_string.trim()) {
+            let utc = parsed.with_timezone(&chrono::Utc);
+            let fields = (
+                utc.year() as i64,
+                utc.month() as i64,
+                utc.day() as i64,
+                utc.hour() as i64,
+                utc.minute() as i64,
+            );
+            if include_timezone {
+                return format!("{} UTC", format_date_fields(fields.0, fields.1 - 1, fields.2, fields.3, fields.4));
+            }
+            return format_date_fields(fields.0, fields.1 - 1, fields.2, fields.3, fields.4);
+        }
         if let Some((y, mo, d, h, mi)) = parse_iso_like(dt_string) {
             if include_timezone {
                 return format!(
@@ -123,10 +141,4 @@ fn titlecase_words(s: &str) -> String {
         boundary = !c.is_alphanumeric();
     }
     out
-}
-
-// Keep chrono imports used in future timezone work referenced.
-#[allow(dead_code)]
-fn _unused(d: &chrono::DateTime<chrono::Utc>) -> (u32, u32) {
-    (d.year() as u32, d.second())
 }

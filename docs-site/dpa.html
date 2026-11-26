@@ -54,14 +54,14 @@ body { background: var(--color-bg-primary); }
 <h2>6. Security measures</h2>
 <ul>
 <li>API keys exist only as SHA-256 hashes at rest; plaintext is never stored.</li>
-<li>All transport is TLS; internal object storage is private with short-lived presigned upload sessions.</li>
+<li>All API and dashboard transport is TLS. Outbound asset-fetch and webhook connections use the scheme of the customer-supplied URL — customers who require encryption in transit for their assets and callbacks must supply <code>https://</code> URLs. Internal object storage is private with short-lived presigned upload sessions.</li>
 <li>Quota enforcement and key state use strongly consistent per-key serialization (Durable Objects).</li>
 <li>SSRF protections on all outbound asset fetching: scheme allowlist, private-host blocking, per-redirect revalidation, size caps.</li>
 <li>Security-relevant configuration changes (trust lists, engine versions) are versioned and auditable in source control.</li>
 </ul>
 
 <h2>7. Termination</h2>
-<p>On key revocation or subscription end, associated job records and usage aggregates are retained per the retention schedule for audit, then deleted. Assets in object storage continue to auto-delete on the 30-day lifecycle regardless of account state.</p>
+<p>On key revocation or subscription end, associated job records and usage aggregates are retained per the retention schedule for audit — revocation itself does not delete them; deletion is manual on request or per the retention targets. Assets in object storage continue to auto-delete on the 30-day lifecycle regardless of account state.</p>
 </main>
 </body>
 </html>

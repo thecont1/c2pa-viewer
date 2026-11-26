@@ -203,6 +203,23 @@ export async function rotateKeyHandler(c) {
     let carriedUsage = 0;
     let carriedBytes = 0;
     let seedSource = 'none';
+    let finalized = false;
+    const unfinalize = async () => {
+        // Recovery when the rotation batch fails after finalizing: lift the
+        // predecessor's admission block immediately rather than leaving the
+        // key wedged until the handoff deadline expires.
+        if (!finalized || !c.env.QUOTA_COUNTER) return;
+        try {
+            const stub = c.env.QUOTA_COUNTER.get(c.env.QUOTA_COUNTER.idFromName(row.id));
+            await stub.fetch('https://quota-counter/', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ key_id: row.id, month, op: 'unfinalize' }),
+            });
+        } catch (e) {
+            console.error('unfinalize failed (handoff self-expires in 2 min):', e);
+        }
+    };
     if (c.env.QUOTA_COUNTER) {
         try {
             const stub = c.env.QUOTA_COUNTER.get(c.env.QUOTA_COUNTER.idFromName(row.id));
@@ -214,7 +231,20 @@ export async function rotateKeyHandler(c) {
             if (resp.ok) {
                 const fin = await resp.json();
                 if (fin.month === month) {
-                    carriedUsage = (fin.consumed || 0) + (fin.active || 0);
+                    // Verifications still in flight would force a choice
+                    // between over-counting the successor (pre-counted slots
+                    // that later release) and double-counting (slots that
+                    // commit on the predecessor). Neither is acceptable, so
+                    // rotation waits: finalize already stopped new admissions
+                    // on the predecessor, the in-flight set drains in seconds,
+                    // and the customer retries. Uncontended rotations carry
+                    // exactly the consumed count.
+                    if ((fin.active || 0) > 0) {
+                        await unfinalize();
+                        return problem(409, 'conflict', { detail: 'verifications are in flight on this key — retry rotation in a few seconds' });
+                    }
+                    finalized = true;
+                    carriedUsage = fin.consumed || 0;
                     seedSource = 'finalize';
                 }
             }
@@ -236,16 +266,20 @@ export async function rotateKeyHandler(c) {
             return problem(500, 'internal_error', { detail: 'usage store unavailable' });
         }
     }
+    // Billing fields derive from the predecessor AT WRITE TIME inside the
+    // same transaction, not from the state read before key creation. A
+    // subscription.deleted committed before this batch is visible to the
+    // SELECT (successor starts free+canceled rather than inheriting a stale
+    // paid entitlement); one committed after matches the successor by
+    // subscription id and corrects it directly. SQLite serializes the two
+    // transactions, so no interleaving can slip between them.
     const statements = [
         c.env.DB.prepare(
             `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, created_at, rotated_at, stripe_customer_id, stripe_subscription_id, billing_status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-            id, hash, displayPrefix, row.name, row.type, row.tier, row.scopes,
-            row.quota_monthly, row.allowed_origins, now, now,
-            row.stripe_customer_id || null, row.stripe_subscription_id || null,
-            row.billing_status || 'none'
-        ),
+             SELECT ?, ?, ?, name, type, tier, scopes, quota_monthly, allowed_origins, ?, ?,
+                    stripe_customer_id, stripe_subscription_id, COALESCE(billing_status, 'none')
+             FROM keys WHERE id = ?`
+        ).bind(id, hash, displayPrefix, now, now, row.id),
         // Conditional revoke: a concurrent rotation that already revoked this
         // key changes zero rows here, which we detect below — the loser must
         // not leave a second live successor behind.
@@ -274,10 +308,12 @@ export async function rotateKeyHandler(c) {
             } catch (cleanupErr) {
                 console.error('rotation race cleanup failed:', cleanupErr);
             }
+            await unfinalize();
             return problem(409, 'conflict', { detail: 'key was already rotated — use the successor issued by the first rotation' });
         }
     } catch (e) {
         console.error('key rotation failed:', e);
+        await unfinalize();
         return problem(500, 'internal_error', { detail: 'rotation failed' });
     }
     return Response.json({

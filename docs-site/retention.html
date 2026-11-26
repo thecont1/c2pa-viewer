@@ -40,9 +40,9 @@ body { background: var(--color-bg-primary); }
 <h2>Operational records</h2>
 <table>
 <tr><th>Data</th><th>Contents</th><th>Retention</th></tr>
-<tr><td>Job records</td><td>Job id, status, source URL/filename, timestamps, result or error</td><td>Up to 12 months, for support and abuse investigation</td></tr>
-<tr><td>Usage aggregates</td><td>Monthly verification counts and byte totals per key</td><td>Up to 24 months, for billing and quota audit</td></tr>
-<tr><td>API keys</td><td>SHA-256 hash of the key, display prefix, tier, quota, billing linkage — never the plaintext</td><td>Until revoked, plus 12 months for audit</td></tr>
+<tr><td>Job records</td><td>Job id, status, source URL/filename, timestamps, result or error</td><td>Target: up to 12 months, for support and abuse investigation. These periods are operational targets enforced by manual deletion, not automated lifecycle rules — deletion on request is typically much sooner</td></tr>
+<tr><td>Usage aggregates</td><td>Monthly verification counts and byte totals per key</td><td>Target: up to 24 months, for billing and quota audit (same manual enforcement as above)</td></tr>
+<tr><td>API keys</td><td>SHA-256 hash of the key, display prefix, tier, quota, billing linkage — never the plaintext</td><td>Until revoked, plus a target of 12 months for audit (same manual enforcement as above)</td></tr>
 <tr><td>Platform logs</td><td>Request logs, error traces (Cloudflare Workers observability)</td><td>Cloudflare's standard log retention; asset bytes are never logged</td></tr>
 </table>
 
@@ -54,7 +54,7 @@ body { background: var(--color-bg-primary); }
 </ul>
 
 <h2>Deletion requests</h2>
-<p>Because assets are input-transient and auto-deleted within 30 days, most erasure requests are satisfied by the pipeline itself. Job records and usage aggregates tied to a key are deleted when the key is revoked on request — contact the address published on the documentation site.</p>
+<p>Because assets are input-transient and auto-deleted within 30 days, most erasure requests are satisfied by the pipeline itself. Note that revoking a key does <strong>not</strong> by itself delete the job records or usage aggregates tied to it — revocation stops access, and deletion of associated records happens on request. Contact the address published on the documentation site.</p>
 </main>
 </body>
 </html>

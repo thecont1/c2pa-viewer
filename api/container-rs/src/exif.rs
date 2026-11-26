@@ -73,7 +73,7 @@ impl<'a> TiffParser<'a> {
     }
 
     /// Read one IFD entry value as a revived JSON value.
-    fn entry_value(&self, ttype: u32, count: u32, value_off: usize) -> Option<Value> {
+    fn entry_value(&self, ttype: u32, count: u32, value_off: usize, tag: u32) -> Option<Value> {
         // Cumulative decode budget: every expanded element costs heap far
         // beyond its file extent, and adversarial IFD entries can overlap —
         // many entries pointing at one large region multiply the expansion.
@@ -110,8 +110,17 @@ impl<'a> TiffParser<'a> {
             // interior separation intact; a single-notice field decodes
             // exactly as before.
             let mut end = raw.len();
-            while end > 0 && raw[end - 1] == 0 {
-                end -= 1;
+            if tag == 0x8298 {
+                // Copyright (per the TIFF spec) carries TWO notices —
+                // photographer and editor — NUL-separated. Strip only the
+                // trailing terminator(s) and keep interior separation intact.
+                while end > 0 && raw[end - 1] == 0 {
+                    end -= 1;
+                }
+            } else {
+                // Every other ASCII tag is a single NUL-terminated string —
+                // anything past the first NUL is padding or corruption.
+                end = raw.iter().position(|&c| c == 0).unwrap_or(end);
             }
             let s = raw[..end].iter().map(|&c| c as char).collect::<String>();
             return Some(Value::String(s));
@@ -262,7 +271,7 @@ fn parse_tiff(data: &[u8], parsed: &mut ParsedExif) {
 
     let mut exif_ifd: BTreeMap<u32, RawTag> = BTreeMap::new();
     if let Some(ptr) = ifd0.get(&EXIF_IFD_POINTER) {
-        if let Some(Value::Number(n)) = p.entry_value(ptr.ttype, ptr.count, ptr.value_off) {
+        if let Some(Value::Number(n)) = p.entry_value(ptr.ttype, ptr.count, ptr.value_off, EXIF_IFD_POINTER) {
             if let Some(off) = n.as_u64() {
                 collect_ifd(&p, off as usize, &mut exif_ifd);
             }
@@ -270,7 +279,7 @@ fn parse_tiff(data: &[u8], parsed: &mut ParsedExif) {
     }
     let mut gps_ifd: BTreeMap<u32, RawTag> = BTreeMap::new();
     if let Some(ptr) = ifd0.get(&GPS_IFD_POINTER) {
-        if let Some(Value::Number(n)) = p.entry_value(ptr.ttype, ptr.count, ptr.value_off) {
+        if let Some(Value::Number(n)) = p.entry_value(ptr.ttype, ptr.count, ptr.value_off, GPS_IFD_POINTER) {
             if let Some(off) = n.as_u64() {
                 collect_ifd(&p, off as usize, &mut gps_ifd);
             }
@@ -280,7 +289,7 @@ fn parse_tiff(data: &[u8], parsed: &mut ParsedExif) {
     // --- IFD0 tags (translated values apply here) ---
     let str_tag = |map: &BTreeMap<u32, RawTag>, tag: u32| -> Option<Value> {
         let t = map.get(&tag)?;
-        p.entry_value(t.ttype, t.count, t.value_off)
+        p.entry_value(t.ttype, t.count, t.value_off, tag)
     };
 
     let put = |parsed: &mut ParsedExif, name: &str, v: Option<Value>| {
@@ -350,7 +359,7 @@ fn parse_tiff(data: &[u8], parsed: &mut ParsedExif) {
     // UserComment (0x9286): 8-byte charset prefix then text; exifr decodes
     // ASCII/Unicode — the common case is ASCII after b"ASCII\0\0\0".
     if let Some(t) = exif_ifd.get(&0x9286) {
-        if let Some(Value::Array(bytes)) = p.entry_value(t.ttype, t.count, t.value_off) {
+        if let Some(Value::Array(bytes)) = p.entry_value(t.ttype, t.count, t.value_off, 0x9286) {
             let raw: Vec<u8> = bytes.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect();
             if raw.len() > 8 {
                 let body = &raw[8..];
@@ -377,11 +386,11 @@ fn parse_tiff(data: &[u8], parsed: &mut ParsedExif) {
     // --- GPS ---
     let gps_num = |tag: u32| -> Option<f64> {
         let t = gps_ifd.get(&tag)?;
-        num_val(&p.entry_value(t.ttype, t.count, t.value_off)?)
+        num_val(&p.entry_value(t.ttype, t.count, t.value_off, tag)?)
     };
     let gps_arr = |tag: u32| -> Option<Vec<f64>> {
         let t = gps_ifd.get(&tag)?;
-        match p.entry_value(t.ttype, t.count, t.value_off)? {
+        match p.entry_value(t.ttype, t.count, t.value_off, tag)? {
             Value::Array(a) => Some(a.iter().filter_map(|v| v.as_f64()).collect()),
             Value::Number(n) => Some(vec![n.as_f64()?]),
             _ => None,
@@ -389,7 +398,7 @@ fn parse_tiff(data: &[u8], parsed: &mut ParsedExif) {
     };
     let gps_str = |tag: u32| -> Option<String> {
         let t = gps_ifd.get(&tag)?;
-        p.entry_value(t.ttype, t.count, t.value_off)?.as_str().map(|s| s.to_string())
+        p.entry_value(t.ttype, t.count, t.value_off, tag)?.as_str().map(|s| s.to_string())
     };
     if let (Some(dms), Some(r)) = (gps_arr(0x0002), gps_str(0x0001)) {
         if dms.len() >= 3 {
@@ -422,6 +431,14 @@ fn parse_jpeg_segments(bytes: &[u8], parsed: &mut ParsedExif) {
         if bytes[i] != 0xFF {
             i += 1;
             continue;
+        }
+        // Markers may be preceded by any number of 0xFF fill bytes — skip
+        // them before interpreting the marker byte itself.
+        while i + 1 < bytes.len() && bytes[i + 1] == 0xFF {
+            i += 1;
+        }
+        if i + 4 >= bytes.len() {
+            break;
         }
         let marker = bytes[i + 1];
         if marker == 0xD9 || marker == 0xDA {
@@ -501,6 +518,7 @@ fn parse_iptc(data: &[u8], parsed: &mut ParsedExif) {
         (116, "CopyrightNotice"),
     ];
     let mut i = 0usize;
+    let mut utf8 = false;
     while i + 5 <= data.len() {
         if data[i] != 0x1C {
             i += 1;
@@ -514,7 +532,20 @@ fn parse_iptc(data: &[u8], parsed: &mut ParsedExif) {
             break;
         }
         let raw = &data[start..start + len];
-        let text: String = raw.iter().map(|&c| c as char).collect();
+        // Record 1 dataset 90 (CodedCharacterSet) declares the encoding of
+        // the datasets that follow; ESC % G is the UTF-8 designator.
+        if record == 1 && dataset == 90 {
+            if raw.starts_with(&[0x1B, 0x25, 0x47]) {
+                utf8 = true;
+            }
+            i = start + len;
+            continue;
+        }
+        let text: String = if utf8 {
+            String::from_utf8_lossy(raw).into_owned()
+        } else {
+            raw.iter().map(|&c| c as char).collect()
+        };
         for (ds, name) in map {
             if record == 2 && dataset == ds && !text.trim().is_empty() {
                 if name == "Keywords" {
@@ -567,13 +598,23 @@ fn icc_profile_description(icc: &[u8]) -> Option<String> {
                     return Some(s);
                 }
             } else if &body[0..4] == b"mluc" {
+                // mluc layout: sig(4) reserved(4) count(4) recsize(4), then
+                // 12-byte records — lang(2) country(2) length(4) offset(4).
+                // The first record's LENGTH is at body[20..24] and the
+                // tag-relative OFFSET at body[24..28]; they are not the
+                // other way around.
                 if body.len() < 28 {
                     return None;
                 }
-                let first_off = u32::from_be_bytes([body[20], body[21], body[22], body[23]]) as usize;
-                let first_len = u32::from_be_bytes([body[24], body[25], body[26], body[27]]) as usize;
+                let count = u32::from_be_bytes([body[8], body[9], body[10], body[11]]);
+                if count < 1 {
+                    return None;
+                }
+                let first_len = u32::from_be_bytes([body[20], body[21], body[22], body[23]]) as usize;
+                let first_off = u32::from_be_bytes([body[24], body[25], body[26], body[27]]) as usize;
+                let end = first_off.checked_add(first_len)?;
                 let s: String = body
-                    .get(first_off..first_off + first_len)?
+                    .get(first_off..end)?
                     .chunks_exact(2)
                     .map(|c| u16::from_be_bytes([c[0], c[1]]))
                     .take_while(|&c| c != 0)

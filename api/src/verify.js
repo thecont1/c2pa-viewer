@@ -310,6 +310,10 @@ export function apiErrorResponse(e) {
             return problem(422, 'invalid_request', { detail: e.message });
         case 'upstream':
             return problem(502, 'upstream_fetch_failed', { detail: e.message });
+        case 'internal':
+            // Infrastructure failures (quota store, engine init, D1) are
+            // server faults — 422 would misattribute them to the caller.
+            return problem(500, 'internal_error', { detail: e.message });
         case 'quota':
             return problem(429, 'quota_exceeded', {
                 detail: e.message,

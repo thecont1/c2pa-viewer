@@ -258,11 +258,11 @@ async function dashboardView() {
     <div class="dash-card">
       <h2>Plan &amp; billing</h2>
       <div class="dash-row">
-        ${k.tier === 'free' ? `
-          <button class="btn" data-upgrade="pro">Upgrade to Pro — $19/mo</button>
-          <button class="btn btn-quiet" data-upgrade="scale">Scale — $99/mo</button>`
-        : `<button class="btn" id="portal-btn">Manage billing</button>
-           ${k.tier === 'pro' ? '<button class="btn btn-quiet" data-upgrade="scale">Upgrade to Scale — $99/mo</button>' : ''}`}
+        ${(k.billing_status && k.billing_status !== 'none' && k.billing_status !== 'canceled')
+        ? `<button class="btn" id="portal-btn">Manage billing</button>
+           ${k.tier === 'pro' ? '<button class="btn btn-quiet" data-upgrade="scale">Upgrade to Scale — $99/mo</button>' : ''}`
+        : `<button class="btn" data-upgrade="pro">Upgrade to Pro — $19/mo</button>
+          <button class="btn btn-quiet" data-upgrade="scale">Scale — $99/mo</button>`}
       </div>
       <div id="billing-status"></div>
     </div>
@@ -327,8 +327,14 @@ async function upgradeFlow(tier, key) {
 function rotateFlow(key) {
     const zone = document.getElementById('keyman-status');
     if (!confirm('Rotate this key? The current key stops working immediately.')) return;
+    const gen = sessionGen;
     (async () => {
         const r = await api('/v1/key/rotate', { method: 'POST', key });
+        // Same ownership discipline as revokeFlow: a sign-out or credential
+        // change in between means this completion belongs to a session that
+        // no longer exists — revealing its key would hand a live secret to a
+        // dead session's view.
+        if (gen !== sessionGen || getKey() !== key) return;
         if (r.status === 200 && r.json && r.json.key) keyRevealView(r.json);
         else zone.innerHTML = errorBox((r.json && r.json.detail) || 'Rotation failed.');
     })();

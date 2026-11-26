@@ -25,12 +25,12 @@ export class C2paClient {
         this.key = key;
         this.base = baseUrl.replace(/\/$/, '');
     }
-    async request(method, path, body, extraHeaders) {
+    async request(method, path, body, extraHeaders, signal) {
         const headers = { authorization: `Bearer ${this.key}`, ...extraHeaders };
         if (body !== undefined)
             headers['content-type'] = 'application/json';
         const resp = await fetch(`${this.base}${path}`, {
-            method, headers, body: body !== undefined ? JSON.stringify(body) : undefined,
+            method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal,
         });
         const json = await resp.json().catch(() => null);
         if (!resp.ok) {
@@ -62,19 +62,34 @@ export class C2paClient {
         const { idempotencyKey, ...body } = input;
         return this.request('POST', '/v1/jobs', body, idempotencyKey ? { 'idempotency-key': idempotencyKey } : undefined);
     }
-    getJob(jobId) {
-        return this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}`);
+    getJob(jobId, signal) {
+        return this.request('GET', `/v1/jobs/${encodeURIComponent(jobId)}`, undefined, undefined, signal);
     }
-    /** Poll a job to its terminal state. */
+    /** Poll a job to its terminal state. The deadline bounds everything:
+     * each in-flight poll aborts when the remaining time runs out, and each
+     * sleep caps at the time left — the loop returns at timeoutMs even when
+     * a request or delay would otherwise exceed it. */
     async waitForJob(jobId, { intervalMs = 3000, timeoutMs = 300000 } = {}) {
         const deadline = Date.now() + timeoutMs;
         for (;;) {
-            const job = await this.getJob(jobId);
+            const remaining = deadline - Date.now();
+            if (remaining <= 0)
+                throw new C2paError(0, 'timeout', `job ${jobId} did not terminate in ${timeoutMs}ms`, null);
+            let job;
+            try {
+                job = await this.getJob(jobId, AbortSignal.timeout(remaining));
+            }
+            catch (e) {
+                if (Date.now() >= deadline)
+                    throw new C2paError(0, 'timeout', `job ${jobId} did not terminate in ${timeoutMs}ms`, null);
+                throw e;
+            }
             if (job.status === 'succeeded' || job.status === 'failed')
                 return job;
-            if (Date.now() > deadline)
+            const left = deadline - Date.now();
+            if (left <= 0)
                 throw new C2paError(0, 'timeout', `job ${jobId} did not terminate in ${timeoutMs}ms`, null);
-            await new Promise((r) => setTimeout(r, intervalMs));
+            await new Promise((r) => setTimeout(r, Math.min(intervalMs, left)));
         }
     }
     /** Key metadata + current-month usage. */

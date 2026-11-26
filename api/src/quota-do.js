@@ -46,7 +46,13 @@ export class QuotaCounter extends DurableObject {
             this._stateLoad = this._loadStateInner(keyId, month)
                 .finally(() => { this._stateLoad = null; });
         }
-        return this._stateLoad;
+        const state = await this._stateLoad;
+        // The shared load may have been started by a caller requesting a
+        // DIFFERENT month (midnight UTC rollover mid-initialization). Quota
+        // decisions and token attribution must use the requested month —
+        // recheck and load again rather than serve the wrong month's state.
+        if (state.month === month) return state;
+        return this.loadState(keyId, month);
     }
 
     async _loadStateInner(keyId, month) {
@@ -86,24 +92,30 @@ export class QuotaCounter extends DurableObject {
         return state;
     }
 
+    // Admission pressure counts only the CURRENT month's reservations.
+    // Carried-over stragglers from last month stay in state.reserved (their
+    // commits must still find their tokens) but must not inflate this
+    // month's admission count — their ledger rows already landed in the
+    // month they belong to. Legacy numeric entries carry no month and count
+    // conservatively as current.
+    _activeCount(state) {
+        let n = 0;
+        for (const entry of Object.values(state.reserved)) {
+            if (entry && typeof entry === 'object' && entry.month && entry.month !== state.month) continue;
+            n += 1;
+        }
+        return n;
+    }
+
     async _put(state) {
         this._stateCache = state;
         await this.ctx.storage.put(STATE_KEY, state);
     }
 
-    // D1 ledger write with persistent retry. The DO is the only writer of
-    // usage.verify_count; a discarded failure strands the divergence forever
-    // because the reservation is already finalized. Failed entries persist in
-    // DO storage and flush on every subsequent op.
-    async incrementD1(keyId, month, bytes) {
-        const entry = { keyId, month, bytes: bytes || 0, id: crypto.randomUUID() };
-        await this._ledgerChain(async () => {
-            const pending = (await this.ctx.storage.get('pendingLedger')) || [];
-            pending.push(entry);
-            await this.ctx.storage.put('pendingLedger', pending);
-            await this._flushLedgerInner();
-        });
-    }
+    // D1 ledger writes are receipt-guarded exactly-once batches; failed
+    // entries persist in DO storage (pendingLedger) and flush on every
+    // subsequent op. Enqueueing happens atomically with the quota transition
+    // inside each op — see commit/charge/meter.
 
     // DO async interleaving applies to the ledger too: two concurrent commits
     // enqueueing at once each read the pre-write list and one entry is lost;
@@ -177,7 +189,15 @@ export class QuotaCounter extends DurableObject {
             case 'reserve': {
                 const limit = op.limit;
                 if (typeof limit !== 'number') return Response.json({ error: 'limit required' }, { status: 400 });
-                const active = Object.keys(state.reserved).length;
+                // Rotation handoff: once finalize ran, new admissions on the
+                // predecessor must stop — a reservation created after the
+                // seed read would commit past the successor's counter. The
+                // handoff expires on its own so a rotation that fails after
+                // finalizing does not wedge the key forever.
+                if (state.handoffUntil && state.handoffUntil > Date.now()) {
+                    return Response.json({ ok: false, handoff: true, consumed: state.consumed, active: this._activeCount(state) });
+                }
+                const active = this._activeCount(state);
                 if (state.consumed + active >= limit) {
                     return Response.json({ ok: false, consumed: state.consumed, active });
                 }
@@ -194,6 +214,16 @@ export class QuotaCounter extends DurableObject {
                     return Response.json({ ok: true, transitioned: false });
                 }
                 const entry = state.reserved[token];
+                // Expiry-precise: a token past its lifetime is rejected here,
+                // not just when the prune happens to run. The verification
+                // outlived its reservation — the slot was already reclaimed
+                // for admission, so the late commit must not count.
+                const exp = typeof entry === 'number' ? entry : entry && entry.exp;
+                if (exp && exp <= Date.now()) {
+                    delete state.reserved[token];
+                    await this._put(state);
+                    return Response.json({ ok: true, transitioned: false, expired: true });
+                }
                 delete state.reserved[token];
                 // The ledger month is the reservation's own month — a commit
                 // straddling midnight UTC counts where the verification started.
@@ -204,8 +234,21 @@ export class QuotaCounter extends DurableObject {
                 if (ledgerMonth === state.month) {
                     state.consumed += 1;
                 }
-                await this._put(state);
-                this.ctx.waitUntil(this.incrementD1(keyId, ledgerMonth, op.bytes));
+                // The quota transition and the retry-queued ledger entry are
+                // persisted in ONE atomic storage write — a crash between
+                // them previously stranded the divergence forever because
+                // the reservation was already finalized. The ledger chain
+                // serializes the read-modify-write of the pending queue, so
+                // the enqueue is race-free, and the receipt-guarded D1 batch
+                // keeps retries exactly-once.
+                const ledgerEntry = { keyId, month: ledgerMonth, bytes: op.bytes || 0, id: crypto.randomUUID() };
+                await this._ledgerChain(async () => {
+                    const pending = (await this.ctx.storage.get('pendingLedger')) || [];
+                    pending.push(ledgerEntry);
+                    await this.ctx.storage.put({ [STATE_KEY]: state, pendingLedger: pending });
+                    this._stateCache = state;
+                    await this._flushLedgerInner();
+                });
                 return Response.json({ ok: true, transitioned: true, consumed: state.consumed });
             }
 
@@ -222,13 +265,22 @@ export class QuotaCounter extends DurableObject {
             case 'charge': {
                 const limit = op.limit;
                 if (typeof limit !== 'number') return Response.json({ error: 'limit required' }, { status: 400 });
-                const active = Object.keys(state.reserved).length;
+                const active = this._activeCount(state);
                 if (state.consumed + active >= limit) {
                     return Response.json({ ok: false, consumed: state.consumed, active });
                 }
                 state.consumed += 1;
-                await this._put(state);
-                this.ctx.waitUntil(this.incrementD1(keyId, month, op.bytes));
+                // Same atomic transition+enqueue discipline as commit: the
+                // count and the retry-queued ledger entry persist or neither
+                // does.
+                const chargeEntry = { keyId, month, bytes: op.bytes || 0, id: crypto.randomUUID() };
+                await this._ledgerChain(async () => {
+                    const pending = (await this.ctx.storage.get('pendingLedger')) || [];
+                    pending.push(chargeEntry);
+                    await this.ctx.storage.put({ [STATE_KEY]: state, pendingLedger: pending });
+                    this._stateCache = state;
+                    await this._flushLedgerInner();
+                });
                 return Response.json({ ok: true, consumed: state.consumed });
             }
 
@@ -243,12 +295,39 @@ export class QuotaCounter extends DurableObject {
                 // predecessor's ledger row for audit; nobody reads it for
                 // quota afterward.)
                 await this._flushLedger().catch((e) => console.error('finalize flush failed:', e));
+                state.handoffUntil = Date.now() + 2 * 60 * 1000;
+                await this._put(state);
                 return Response.json({
                     ok: true,
                     consumed: state.consumed,
                     active: Object.keys(state.reserved).length,
                     month: state.month,
                 });
+            }
+
+            case 'unfinalize': {
+                // Rotation failed after finalizing — lift the admission block
+                // immediately rather than waiting out the expiry.
+                if (state.handoffUntil) {
+                    delete state.handoffUntil;
+                    await this._put(state);
+                }
+                return Response.json({ ok: true });
+            }
+
+            case 'meter': {
+                // Unlimited keys enforce nothing but still meter: a completed
+                // verification always increments usage counts and bytes.
+                state.consumed += 1;
+                const meterEntry = { keyId, month: state.month, bytes: op.bytes || 0, id: crypto.randomUUID() };
+                await this._ledgerChain(async () => {
+                    const pending = (await this.ctx.storage.get('pendingLedger')) || [];
+                    pending.push(meterEntry);
+                    await this.ctx.storage.put({ [STATE_KEY]: state, pendingLedger: pending });
+                    this._stateCache = state;
+                    await this._flushLedgerInner();
+                });
+                return Response.json({ ok: true, consumed: state.consumed });
             }
 
             case 'peek': {

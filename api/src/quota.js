@@ -48,8 +48,19 @@ export async function reserveQuota(env, keyRow) {
 
 // Terminal success transition + D1 ledger write (inside the DO). Awaited by
 // design — must land before any release attempt for the same token.
+// Unlimited keys enforce nothing but still meter: a completed verification
+// increments usage counts and bytes so the ledger reflects real consumption.
 export async function commitQuota(env, keyRow, token, bytes) {
-    if (!token) return;
+    if (!token) {
+        if (keyRow && !quotaLimited(keyRow) && env.QUOTA_COUNTER) {
+            try {
+                await call(env, keyRow, { op: 'meter', bytes: bytes || 0 });
+            } catch (e) {
+                console.error('quota meter failed:', e);
+            }
+        }
+        return;
+    }
     try {
         await call(env, keyRow, { op: 'commit', token, bytes: bytes || 0 });
     } catch (e) {
@@ -69,7 +80,18 @@ export async function releaseQuota(env, keyRow, token) {
 // Fused check+count for async job acceptance. Returns true when charged
 // (or key unlimited), false when the quota is exhausted.
 export async function chargeQuota(env, keyRow, bytes) {
-    if (!quotaLimited(keyRow)) return true;
+    if (!quotaLimited(keyRow)) {
+        // Same metering discipline as the sync path — job submissions by
+        // unlimited keys are verifications too.
+        if (keyRow && env.QUOTA_COUNTER) {
+            try {
+                await call(env, keyRow, { op: 'meter', bytes: bytes || 0 });
+            } catch (e) {
+                console.error('quota meter failed:', e);
+            }
+        }
+        return true;
+    }
     const r = await call(env, keyRow, { op: 'charge', limit: keyRow.quota_monthly, bytes: bytes || 0 });
     return r.ok === true;
 }

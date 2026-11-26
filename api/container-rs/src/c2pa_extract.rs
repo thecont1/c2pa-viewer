@@ -195,6 +195,12 @@ fn extract_manifest_data(store: &Value) -> Option<Value> {
     basic.insert("title".into(), manifest.get("title").cloned().unwrap_or(Value::Null));
     basic.insert("format".into(), manifest.get("format").cloned().unwrap_or(Value::Null));
     basic.insert("instance_id".into(), manifest.get("instance_id").cloned().unwrap_or(Value::Null));
+    // NOTE: v2 claims carry structured claim_generator_info instead of the
+    // v1 claim_generator string. A fallback deriving the string was considered
+    // and rejected: the Node reference reads claim_generator ?? null with no
+    // fallback, and the frozen goldens pin reference behavior including its
+    // gaps — implementing it diverged byte-exactly on the CAWG fixture (a
+    // "Claim Generator" provenance row the reference never emits).
     basic.insert("claim_generator".into(), manifest.get("claim_generator").cloned().unwrap_or(Value::Null));
 
     let mut result = Map::new();

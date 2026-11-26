@@ -43,7 +43,6 @@ fn json_response(status: StatusCode, value: Value) -> Response {
 
 
 enum DispatchError {
-    SchedulerClosed,
     Join(tokio::task::JoinError),
 }
 
@@ -122,6 +121,17 @@ async fn verify(req: Request) -> Response {
         return err(StatusCode::PAYLOAD_TOO_LARGE, "asset exceeds the 1 GiB asynchronous verification cap");
     }
 
+    // Admission control starts HERE, before a single body byte is retained:
+    // waiting requests hold no buffered asset, so a flood of concurrent
+    // uploads cannot multiply memory while queued. The permit then moves
+    // through dispatch into the blocking analysis closure, staying held
+    // until the analysis actually returns.
+    let sem = analysis_semaphore();
+    let permit = match sem.acquire_owned().await {
+        Ok(p) => p,
+        Err(_) => return err(StatusCode::INTERNAL_SERVER_ERROR, "analysis scheduler unavailable"),
+    };
+
     // Stream the body straight into memory with the cap enforced per frame.
     // The analysis pipeline needs the full asset regardless, so the earlier
     // ephemeral-disk spool bought nothing: it cost blocking file IO on the
@@ -175,12 +185,7 @@ async fn verify(req: Request) -> Response {
     // held until the analysis actually returns — releasing it when the
     // timeout fires would let the queue over-admit while abandoned analyses
     // are still burning CPU.
-    let sem = analysis_semaphore();
     let work = async move {
-        let permit = match sem.acquire_owned().await {
-            Ok(p) => p,
-            Err(_) => return Err(DispatchError::SchedulerClosed),
-        };
         tokio::task::spawn_blocking(move || {
             let _permit = permit; // held until this closure returns, timeout or not
             let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
@@ -209,9 +214,6 @@ async fn verify(req: Request) -> Response {
         Ok(Ok(Err(AnalysisSetup::RuntimeConstruction))) => {
             eprintln!("analysis runtime construction failed");
             err(StatusCode::INTERNAL_SERVER_ERROR, "analysis runtime unavailable")
-        }
-        Ok(Err(DispatchError::SchedulerClosed)) => {
-            err(StatusCode::INTERNAL_SERVER_ERROR, "analysis scheduler unavailable")
         }
         Ok(Err(DispatchError::Join(join_err))) => {
             eprintln!("analysis task join failure: {join_err}");

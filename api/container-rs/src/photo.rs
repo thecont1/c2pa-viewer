@@ -5,14 +5,81 @@ use serde_json::{json, Map, Value};
 use crate::format::format_datetime_full;
 
 // JS n.toFixed(1) then strip trailing zeros and a dangling dot.
+// Rust's {:.N} rounds ties to even; ECMAScript toFixed rounds ties up —
+// and since strictly-above-half rounds up too, the rule collapses to
+// "round half away from zero". Exact decimal ties only occur for
+// binary-exact values like 2.25, so round the exact decimal expansion as
+// a string; scaling the input itself would introduce fresh rounding error.
+fn round_fixed(n: f64, digits: usize) -> String {
+    // 60 fractional digits fully expose any tie in the photographic range.
+    let exact = format!("{:.60}", n);
+    let (neg, exact) = match exact.strip_prefix('-') {
+        Some(r) => (true, r.to_string()),
+        None => (false, exact),
+    };
+    let mut parts = exact.splitn(2, '.');
+    let int_part = parts.next().unwrap_or("0");
+    let frac: Vec<u8> = parts.next().unwrap_or("").bytes().collect();
+    let mut int_digits: Vec<u8> = int_part.bytes().collect();
+    let mut kept: Vec<u8> = frac[..digits.min(frac.len())].to_vec();
+    while kept.len() < digits {
+        kept.push(b'0');
+    }
+    // The first dropped digit decides: 5 or above rounds up (ties away from
+    // zero — there is nothing below a 5 that this digit position can hold,
+    // because any nonzero digit beyond it still means strictly-over-half).
+    let round_up = frac.len() > digits && frac[digits] >= b'5';
+    if round_up {
+        let mut carry = true;
+        let mut i = kept.len();
+        while carry && i > 0 {
+            i -= 1;
+            if kept[i] == b'9' {
+                kept[i] = b'0';
+            } else {
+                kept[i] += 1;
+                carry = false;
+            }
+        }
+        if carry {
+            let mut j = int_digits.len();
+            let mut icarry = true;
+            while icarry && j > 0 {
+                j -= 1;
+                if int_digits[j] == b'9' {
+                    int_digits[j] = b'0';
+                } else {
+                    int_digits[j] += 1;
+                    icarry = false;
+                }
+            }
+            if icarry {
+                int_digits.insert(0, b'1');
+            }
+        }
+    }
+    let int_str: String = int_digits.iter().map(|&b| b as char).collect();
+    let frac_str: String = kept.iter().map(|&b| b as char).collect();
+    let out = if digits == 0 {
+        int_str
+    } else {
+        format!("{}.{}", int_str, frac_str)
+    };
+    // Preserve the sign, except for a zero result (JS: (-0.001).toFixed(1)
+    // is "0.0"... actually "-0.0", but the reference strips zeros anyway).
+    if neg && out.bytes().any(|b| b.is_ascii_digit() && b != b'0') {
+        format!("-{}", out)
+    } else {
+        out
+    }
+}
+
 fn fmt1(n: f64) -> String {
-    let s = format!("{:.1}", n);
-    strip_zeros(s)
+    strip_zeros(round_fixed(n, 1))
 }
 
 fn fmt2(n: f64) -> String {
-    let s = format!("{:.2}", n);
-    strip_zeros(s)
+    strip_zeros(round_fixed(n, 2))
 }
 
 fn strip_zeros(s: String) -> String {

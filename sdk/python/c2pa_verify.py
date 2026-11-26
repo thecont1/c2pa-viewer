@@ -34,7 +34,7 @@ class C2paClient:
         self.timeout = timeout
 
     def _request(self, method: str, path: str, body: dict | None = None,
-                 extra_headers: dict | None = None) -> dict:
+                 extra_headers: dict | None = None, timeout: float | None = None) -> dict:
         headers = {'authorization': f'Bearer {self.key}', 'user-agent': 'c2pa-verify-python/0.1'}
         if extra_headers:
             headers.update(extra_headers)
@@ -44,7 +44,7 @@ class C2paClient:
             data = json.dumps(body).encode()
         req = urllib.request.Request(f'{self.base}{path}', data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout if timeout is not None else self.timeout) as resp:
                 return json.loads(resp.read())
         except urllib.error.HTTPError as e:
             try:
@@ -107,19 +107,26 @@ class C2paClient:
         headers = {'idempotency-key': idempotency_key} if idempotency_key else None
         return self._request('POST', '/v1/jobs', body, headers)
 
-    def get_job(self, job_id: str) -> dict:
-        return self._request('GET', f'/v1/jobs/{urllib.parse.quote(job_id, safe="")}')
+    def get_job(self, job_id: str, timeout: float | None = None) -> dict:
+        return self._request('GET', f'/v1/jobs/{urllib.parse.quote(job_id, safe="")}', timeout=timeout)
 
     def wait_for_job(self, job_id: str, interval: float = 3.0, timeout: float = 300.0) -> dict:
-        """Poll a job to its terminal state."""
+        """Poll a job to its terminal state. The deadline bounds everything:
+        each in-flight request's client timeout caps at the remaining time,
+        and each sleep likewise — polling stops at the requested timeout
+        even when a request or delay would otherwise exceed it."""
         deadline = time.monotonic() + timeout
         while True:
-            job = self.get_job(job_id)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise C2paError(0, 'timeout', f'job {job_id} did not terminate in {timeout}s', None)
+            job = self.get_job(job_id, timeout=remaining)
             if job.get('status') in ('succeeded', 'failed'):
                 return job
-            if time.monotonic() > deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 raise C2paError(0, 'timeout', f'job {job_id} did not terminate in {timeout}s', None)
-            time.sleep(interval)
+            time.sleep(min(interval, remaining))
 
     def key_info(self) -> dict:
         return self._request('GET', '/v1/key')

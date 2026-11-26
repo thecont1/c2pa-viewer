@@ -7,7 +7,12 @@ import { DurableObject } from 'cloudflare:workers';
 const PORT = 8080;
 const INACTIVITY_TIMEOUT_MS = 2 * 60 * 1000;
 const READY_ATTEMPTS = 180;
-const VERIFY_TIMEOUT_MS = 9 * 60 * 1000;
+// Bounded below the 10-minute quota-reservation lifetime on purpose: the
+// end-to-end span reserve -> asset fetch -> container analysis -> commit
+// must close inside the reservation, or the verification outlives its token
+// and the commit is rejected as expired. Container-internal analysis is
+// capped at 8 minutes; this ceiling leaves transfer margin on both sides.
+const VERIFY_TIMEOUT_MS = 8.5 * 60 * 1000;
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 

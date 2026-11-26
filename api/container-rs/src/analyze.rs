@@ -174,12 +174,20 @@ pub fn jsnum(f: f64) -> Value {
 }
 
 // JS String(number) — shortest round-trip decimal; integers drop the dot.
+// ECMAScript switches to exponent notation below 1e-6 and at 1e21; Rust's
+// Display never does, so very small coordinates (a metre-scale GPS rounding
+// near the equator) would diverge from the reference output without this.
 pub fn js_number_string(f: f64) -> String {
     if f == f.trunc() && f.abs() < 1e15 {
         return format!("{}", f as i64);
     }
-    let s = format!("{}", f);
-    s
+    let a = f.abs();
+    if a != 0.0 && (a < 1e-6 || a >= 1e21) {
+        // Rust {:e} already produces JS-shaped exponents: no plus sign, no
+        // zero padding — "1e-7", "-2.5e-8".
+        return format!("{:e}", f);
+    }
+    format!("{}", f)
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {

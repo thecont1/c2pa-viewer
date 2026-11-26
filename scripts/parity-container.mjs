@@ -48,8 +48,31 @@ const [mode, baseArg] = process.argv.slice(2);
 const base = (baseArg || 'http://localhost:8080').replace(/\/$/, '');
 const settings = await loadSettingsHeader();
 
-const files = (await readdir(FIXTURES)).filter((f) => /\.(jpg|jpeg|png)$/i.test(f));
+// Discovery enumerates the GOLDEN REFERENCES, not the images: the corpus
+// can never silently shrink because an image went missing (missing images
+// fail loudly), an empty reference corpus is an error rather than a vacuous
+// pass, and images with no golden still fail as before.
+const goldenFiles = (await readdir(GOLDEN)).filter((f) => f.endsWith('.json'));
+if (!goldenFiles.length) {
+    console.error('golden reference corpus is empty — refusing to report success');
+    process.exit(1);
+}
+const referenced = goldenFiles.map((f) => f.slice(0, -'.json'.length));
+const imageFiles = (await readdir(FIXTURES)).filter((f) => /\.(jpg|jpeg|png)$/i.test(f));
 let failures = 0;
+for (const img of referenced) {
+    if (!imageFiles.includes(img)) {
+        failures++;
+        console.log(`MISSING ${img} — referenced by a golden but absent from the fixture images`);
+    }
+}
+for (const img of imageFiles) {
+    if (!referenced.includes(img) && mode === 'compare') {
+        failures++;
+        console.log(`NO-GOLDEN ${img} — fixture image has no golden reference`);
+    }
+}
+const files = referenced.filter((img) => imageFiles.includes(img));
 
 for (const file of files) {
     const goldenPath = join(GOLDEN, `${file}.json`);
