@@ -1,0 +1,13 @@
+[project]
+name = "c2pa-verify"
+version = "0.1.0"
+description = "Thin client for the C2PA Verify API"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["c2pa_verify"]

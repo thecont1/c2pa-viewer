@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terms of Service — C2PA Verify API</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+body { background: var(--color-bg-primary); }
+.legal-main { max-width: 760px; margin: 0 auto; padding: var(--space-8) var(--space-6); }
+.legal-main h1 { font-size: 1.5rem; margin: 0 0 var(--space-2); }
+.legal-main h2 { font-size: 1.05rem; margin: var(--space-10) 0 var(--space-3); }
+.legal-main p, .legal-main li { font-size: 0.9rem; line-height: 1.7; }
+.legal-main ul { padding-left: var(--space-8); }
+.doc-meta { color: var(--color-text-secondary); font-size: 0.85rem; margin-bottom: var(--space-8); }
+.backlink { color: var(--color-accent); text-decoration: none; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main class="legal-main">
+<a class="backlink" href="/docs">← Documentation</a>
+<h1>Terms of Service</h1>
+<p class="doc-meta">C2PA Verify API · Effective 2026-11-26 · Draft v1 — pending legal review before commercial launch</p>
+
+<p>These terms govern use of the C2PA Verify API (the "Service") operated at api.c2pa.thecontrarian.in. By creating an API key or using the Service you agree to them.</p>
+
+<h2>1. The Service</h2>
+<p>The Service verifies C2PA content credentials in digital assets: manifest validation, trust-chain verification, and provenance metadata extraction, exposed as a REST API, an asynchronous job pipeline, and an MCP server. Verification results are informational statements about cryptographic validity and trust-list membership — they are not a determination that any content is genuine, unmanipulated, or newsworthy.</p>
+
+<h2>2. Accounts and keys</h2>
+<p>API keys are the sole credential. Keys are shown once at creation; you are responsible for storing them and for all activity under them. Rotate or revoke a key immediately if it may have been exposed. We may suspend keys that abuse the Service, including: attempts to bypass quotas or rate limits, verification of content you have no right to process, unlawful content, or interference with the Service's operation.</p>
+
+<h2>3. Tiers, quotas, billing</h2>
+<p>Usage quotas per tier are published in the documentation and enforced as hard caps per calendar month (UTC). Paid subscriptions renew monthly through Stripe and can be cancelled at any time in the billing portal; cancellation takes effect at the end of the paid period, at which point keys revert to the free tier. Fees are non-refundable except where required by law. Failed payments mark the key past due; we may downgrade keys whose payment remains unresolved after the provider's retry period.</p>
+
+<h2>4. Your content</h2>
+<p>You retain all rights to assets you submit. You grant us the limited right to process them solely to perform verification. You represent that you have the right to submit each asset. Assets submitted for asynchronous verification and their verification results are deleted automatically after 30 days as described in the retention statement; synchronous verifications are processed in memory and not stored. We do not use your assets or results to train models, and we do not sell or share them except as required by law.</p>
+
+<h2>5. Acceptable use</h2>
+<ul>
+<li>No unlawful, harmful, or rights-infringing content.</li>
+<li>No probing or testing the vulnerability of the Service or its SSRF protections, and no use of the URL-fetch features to scan or access systems you do not control.</li>
+<li>No reselling or white-labeling the Service without written agreement.</li>
+<li>One free-tier key per person or organization. Creating multiple free keys to exceed the free quota is grounds for suspension of all associated keys.</li>
+</ul>
+
+<h2>6. Availability</h2>
+<p>The Service is provided without a service-level agreement in its current launch phase. We aim for high availability but do not guarantee uninterrupted operation. Scheduled maintenance is announced on the documentation site when foreseeable.</p>
+
+<h2>7. Disclaimers and liability</h2>
+<p>THE SERVICE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND. Verification results depend on third-party trust infrastructure, signing practices, and the correctness of upstream certificate chains; we do not warrant their accuracy, completeness, or fitness for any decision. To the maximum extent permitted by law, aggregate liability arising from the Service is limited to the fees you paid in the three months preceding the claim, or USD 50 for free-tier use.</p>
+
+<h2>8. Changes</h2>
+<p>We may update these terms with 14 days' notice posted to the documentation site. Continued use after the effective date constitutes acceptance. The sandbox (test-key) surface may change without notice.</p>
+
+<h2>9. Contact</h2>
+<p>Questions about these terms: the contact published on the documentation site.</p>
+</main>
+</body>
+</html>
