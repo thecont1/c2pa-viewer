@@ -97,17 +97,29 @@ export class QuotaCounter extends DurableObject {
     // DO storage and flush on every subsequent op.
     async incrementD1(keyId, month, bytes) {
         const entry = { keyId, month, bytes: bytes || 0, id: crypto.randomUUID() };
-        await this._enqueueLedger(entry);
-        await this._flushLedger();
+        await this._ledgerChain(async () => {
+            const pending = (await this.ctx.storage.get('pendingLedger')) || [];
+            pending.push(entry);
+            await this.ctx.storage.put('pendingLedger', pending);
+            await this._flushLedgerInner();
+        });
     }
 
-    async _enqueueLedger(entry) {
-        const pending = (await this.ctx.storage.get('pendingLedger')) || [];
-        pending.push(entry);
-        await this.ctx.storage.put('pendingLedger', pending);
+    // DO async interleaving applies to the ledger too: two concurrent commits
+    // enqueueing at once each read the pre-write list and one entry is lost;
+    // two concurrent flushes both write the same entry to D1. Every access
+    // is chained through one promise so mutations fully serialize.
+    _ledgerChain(fn) {
+        const run = (this._ledgerTail || Promise.resolve()).then(fn);
+        this._ledgerTail = run.catch(() => { });
+        return run;
     }
 
-    async _flushLedger() {
+    _flushLedger() {
+        return this._ledgerChain(() => this._flushLedgerInner());
+    }
+
+    async _flushLedgerInner() {
         const pending = (await this.ctx.storage.get('pendingLedger')) || [];
         if (!pending.length) return;
         const remaining = [];

@@ -4,9 +4,9 @@ FROM rust:1-bookworm AS build
 WORKDIR /src
 # c2pa's default features use openssl for some signing paths.
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
-COPY api/container-rs/Cargo.toml api/container-rs/Cargo.lock* ./
+COPY api/container-rs/Cargo.toml api/container-rs/Cargo.lock ./
 COPY api/container-rs/src ./src
-RUN cargo build --release && strip target/release/c2pa-verify-container
+RUN cargo build --release --locked && strip target/release/c2pa-verify-container
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*

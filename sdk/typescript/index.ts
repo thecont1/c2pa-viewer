@@ -67,7 +67,8 @@ export class C2paClient {
         if (input.include) query.set('include', input.include);
         if (input.trust) query.set('trust', input.trust);
         if (input.strip_gps !== undefined) query.set('strip_gps', String(input.strip_gps));
-        const qs = query.size ? `?${query}` : '';
+        const qsRaw = query.toString();
+        const qs = qsRaw ? `?${qsRaw}` : '';
         const { include, trust, strip_gps, ...body } = input;
         return this.request<Record<string, unknown>>('POST', `/v1/verify${qs}`, body);
     }

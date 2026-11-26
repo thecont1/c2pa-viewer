@@ -24,7 +24,7 @@ use axum::{
     Router,
 };
 use serde_json::{json, Value};
-use std::io::Write;
+
 
 use analyze::{analyze, AnalyzeArgs};
 use trust::Anchors;

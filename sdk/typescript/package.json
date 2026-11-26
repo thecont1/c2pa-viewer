@@ -3,7 +3,26 @@
   "version": "0.1.0",
   "description": "Thin TypeScript client for the C2PA Verify API",
   "type": "module",
-  "main": "index.ts",
-  "exports": { ".": "./index.ts" },
-  "license": "Apache-2.0"
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./index.ts": "./index.ts"
+  },
+  "license": "Apache-2.0",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "index.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
 }
