@@ -17,7 +17,7 @@
   // once the registry listing (Phase 4) publishes the custom domain.
   "workers_dev": true,
   // agents/mcp/server uses AsyncLocalStorage from node:async_hooks.
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "rules": [
     {
       "type": "CompiledWasm",

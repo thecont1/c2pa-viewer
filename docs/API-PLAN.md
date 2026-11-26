@@ -141,7 +141,7 @@ M5 completed 2026-11-26 (worker version c7d3f172):
 
 Decisions locked 2026-11-26:
 - **Tiers**: free 1,000 verifications/mo $0 · pro 25,000/mo $19 · scale 250,000/mo $99. Hard caps (429 quota_exceeded, consistent with existing enforcement); usage reported to Stripe for visibility/overage-readiness but no overage billing in v1.
-- **Billing**: billing-agnostic adapter (`api/src/billing.js`) with a Stripe implementation wired test-mode-ready; activated when keys arrive. No email infrastructure — keys are delivered once post-checkout via session_id reveal, dashboard auth is the API key itself, billing management redirects to the Stripe customer portal.
+- **Billing**: billing-agnostic adapter (`api/src/billing.js`) with a Stripe implementation wired test-mode-ready; activated when keys arrive. **Provider undecided** — user may choose RazorPay instead of Stripe; the adapter boundary is the integration point, no provider-specific logic outside it. No email infrastructure — keys are delivered once post-checkout via session_id reveal, dashboard auth is the API key itself, billing management redirects to the Stripe customer portal.
 - **Dashboard + docs**: extend the existing Pages viewer (`/dashboard`, `/docs`), not a separate app.
 - **Free signup abuse control**: Cloudflare Turnstile + per-IP rate limit on the signup endpoint.
 
@@ -152,7 +152,7 @@ Milestones:
 - [x] P4.4 Customer dashboard in the Pages viewer: key-auth, usage/quota meters, jobs list, rotate/revoke, upgrade flow, signup flow with Turnstile
 - [x] P4.5 Docs site in the Pages viewer (/docs: quickstart, auth, sync, async, webhooks, MCP, trust, errors, quotas) + thin TypeScript and Python SDKs
 - [x] P4.6 Terms of service, DPA, retention statement (accurate to actual R2/D1 retention)
-- [ ] P4.7 First paying key — end-to-end validation (blocked on Stripe account keys)
+- [ ] P4.7 First paying key — end-to-end validation (blocked on provider decision — Stripe vs RazorPay — and account keys)
 
 ## Phase 5: Extras (demand-driven)
 
