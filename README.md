@@ -155,4 +155,4 @@ c2pa-viewer/
 ```
 
 ## License
-This project is licensed under the MIT License.
+This project is licensed under the [Business Source License 1.1](LICENSE.md): free for any use — including production — other than offering a competing hosted C2PA verification service, converting to Apache 2.0 four years after each version's first public release.
