@@ -6,9 +6,8 @@ import { AwsClient } from 'aws4fetch';
 import { ApiError, problem, buildProblemPayload } from './errors.js';
 import { parseInclude, parseTrust, parseStripGps, apiErrorResponse, displayNameFromUrl } from './verify.js';
 import { validateAssetUrl } from './urlfetch.js';
-import { currentMonth } from './db.js';
 import { isBlockedHost } from '../../packages/core/src/ssrf.js';
-import { checkQuota } from './auth.js';
+import { chargeQuota } from './quota.js';
 
 export const MAX_JOB_BYTES = 1024 * 1024 * 1024; // 1 GiB
 export const JOB_BUCKET = 'c2pa-verify-jobs';
@@ -184,20 +183,28 @@ export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey
     // in middleware: a replayed creation must recover the original job even
     // when the key has since reached its quota. New submissions still cannot
     // start once the quota is exhausted.
-    const quotaFailure = await checkQuota(env.DB, keyRow);
-    if (quotaFailure) throw new ApiError('quota', quotaFailure.detail);
+    let charged = true;
+    if (keyKind !== 'test') {
+        try {
+            charged = await chargeQuota(env, keyRow, 0);
+        } catch (e) {
+            console.error('quota charge failed:', e);
+            throw new ApiError('internal', 'Usage store unavailable.');
+        }
+    }
+    if (!charged) throw new ApiError('quota', `Monthly quota of ${keyRow.quota_monthly} verifications exhausted.`);
 
     const jobId = `job_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
     const objectKey = `uploads/${jobId}`;
     const now = nowIso();
     const status = input.url ? 'queued' : 'awaiting_upload';
 
-    // Commit the job row and the submission charge in one atomic D1 batch:
-    // the job can never become runnable without its charge persisted, and the
-    // charge can never exist without the job. Bytes are added when the real
-    // object size is known; refund-on-failure does not exist yet. Test keys
-    // are never charged.
-    const chargeable = keyRow && keyKind !== 'test';
+    // The submission charge was already counted atomically by the QuotaCounter
+    // DO above (which also writes the usage ledger); the job row insert stands
+    // alone. A batch failure here means an orphaned charge without a job —
+    // under-counting in the customer's favor, accepted over the reverse.
+    // Bytes are added when the real object size is known; refund-on-failure
+    // does not exist yet. Test keys are never charged.
     const insertStmt = env.DB.prepare(
         `INSERT INTO jobs (job_id,key_id,status,idempotency_key,source,webhook_url,include,trust,strip_gps,error,object_key,size_bytes,created_at,updated_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
@@ -205,20 +212,9 @@ export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey
         jobId, keyRow.id, status, idem, JSON.stringify(input.source), input.webhook_url,
         input.include, input.trust, input.strip_gps ? 1 : 0, null, objectKey, input.size_bytes, now, now
     );
-    const batch = [insertStmt];
-    if (chargeable) {
-        batch.push(env.DB.prepare(
-            `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at)
-             VALUES (?, ?, 1, 0, ?)
-             ON CONFLICT (key_id, month) DO UPDATE SET
-               verify_count = verify_count + 1,
-               updated_at   = excluded.updated_at`
-        ).bind(keyRow.id, currentMonth(), now));
-    }
-
     let row;
     try {
-        await env.DB.batch(batch);
+        await env.DB.batch([insertStmt]);
     } catch (e) {
         if (idem) {
             const existing = await jobRowByIdempotency(env.DB, keyRow.id, idem);

@@ -139,12 +139,20 @@ M5 completed 2026-11-26 (worker version c7d3f172):
 
 ## Phase 4: Commercial layer
 
-- [ ] Usage metering in D1 and per-key quota Durable Object
-- [ ] Stripe metered billing
-- [ ] Customer dashboard (keys, usage)
-- [ ] Docs site and generated SDKs (TypeScript, Python)
-- [ ] Terms of service, DPA, retention statement
-- [ ] First paying key
+Decisions locked 2026-11-26:
+- **Tiers**: free 1,000 verifications/mo $0 · pro 25,000/mo $19 · scale 250,000/mo $99. Hard caps (429 quota_exceeded, consistent with existing enforcement); usage reported to Stripe for visibility/overage-readiness but no overage billing in v1.
+- **Billing**: billing-agnostic adapter (`api/src/billing.js`) with a Stripe implementation wired test-mode-ready; activated when keys arrive. No email infrastructure — keys are delivered once post-checkout via session_id reveal, dashboard auth is the API key itself, billing management redirects to the Stripe customer portal.
+- **Dashboard + docs**: extend the existing Pages viewer (`/dashboard`, `/docs`), not a separate app.
+- **Free signup abuse control**: Cloudflare Turnstile + per-IP rate limit on the signup endpoint.
+
+Milestones:
+- [ ] P4.1 Per-key quota Durable Object: atomic reserve/commit/release with expiring reservation tokens (crash-safe), month rollover, D1 usage table remains the metering ledger; eliminates the check-then-increment race in the current D1-read quota path
+- [ ] P4.2 Self-service key backend: POST /v1/signup/free (Turnstile-verified), key-authed management endpoints (GET /v1/key, GET /v1/usage, POST /v1/key/rotate, POST /v1/key/revoke, GET /v1/jobs list), migration 0003 (stripe customer/subscription columns)
+- [ ] P4.3 Billing adapter + Stripe impl: POST /v1/billing/checkout (key-auth upgrade OR keyless new-customer flow), GET /v1/billing/checkout-session reveal-once, POST /v1/billing/portal, POST /v1/billing/webhook (signature-verified: checkout.session.completed → tier upgrade, subscription.deleted → downgrade to free), clean 503 when unconfigured
+- [ ] P4.4 Customer dashboard in the Pages viewer: key-auth, usage/quota meters, jobs list, rotate/revoke, upgrade flow, signup flow with Turnstile
+- [ ] P4.5 Docs site in the Pages viewer (/docs: quickstart, auth, sync, async, webhooks, MCP, trust, errors, quotas) + thin TypeScript and Python SDKs
+- [ ] P4.6 Terms of service, DPA, retention statement (accurate to actual R2/D1 retention)
+- [ ] P4.7 First paying key — end-to-end validation (blocked on Stripe account keys)
 
 ## Phase 5: Extras (demand-driven)
 

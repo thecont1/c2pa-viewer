@@ -101,7 +101,10 @@ async function create(args) {
         quota = Number(String(args.quota).trim());
         if (!Number.isSafeInteger(quota)) die('--quota must be a non-negative integer');
     } else {
-        quota = tier === 'free' ? 500 : null; // NULL = unlimited
+        // Tier defaults match the Phase 4 pricing (2026-11-26): free 1k/mo,
+        // pro 25k/mo, scale 250k/mo. NULL stays available as an explicit
+        // admin override (--quota) for grandfathered or arrangement keys.
+        quota = { free: 1000, pro: 25000, scale: 250000 }[tier];
     }
 
     let scopes = null;

@@ -11,12 +11,15 @@
 import { Hono } from 'hono';
 import { parse as parseYaml } from 'yaml';
 
-import { authMw, rateLimitMw, quotaMw } from './auth.js';
+import { authMw, optionalAuthMw, rateLimitMw, quotaMw } from './auth.js';
 import { corsMw, preflightMw } from './cors.js';
 import { verifyHandler, miniHandler } from './verify.js';
 import { createJobHandler, getJobHandler } from './jobs.js';
+import { signupFreeHandler, getKeyHandler, getUsageHandler, rotateKeyHandler, revokeKeyHandler, listJobsHandler } from './keyman.js';
+import { checkoutHandler, revealHandler, portalHandler, webhookHandler } from './billing.js';
 import { jobsQueueHandler } from './jobs-consumer.js';
 import { JobRunner } from './job-runner.js';
+import { QuotaCounter } from './quota-do.js';
 import { mcpAuthMw, mcpHandler, mcpOptionsHandler } from './mcp.js';
 import { problem } from './errors.js';
 import { TRUST_ANCHORS, trustListsPayload } from './trust-info.js';
@@ -69,6 +72,24 @@ app.get('/v1/verify/mini', corsMw, authMw, rateLimitMw, quotaMw, miniHandler);
 app.post('/v1/jobs', corsMw, authMw, rateLimitMw, createJobHandler);
 app.get('/v1/jobs/:job_id', corsMw, authMw, rateLimitMw, getJobHandler);
 
+// Phase 4 self-service. Signup is the single unauthenticated write surface
+// (Turnstile + per-IP limited inside the handler); everything else is keyed
+// by the presented key itself and never consumes verification quota.
+app.post('/v1/signup/free', signupFreeHandler);
+app.get('/v1/key', corsMw, authMw, rateLimitMw, getKeyHandler);
+app.get('/v1/usage', corsMw, authMw, rateLimitMw, getUsageHandler);
+app.post('/v1/key/rotate', corsMw, authMw, rateLimitMw, rotateKeyHandler);
+app.post('/v1/key/revoke', corsMw, authMw, rateLimitMw, revokeKeyHandler);
+app.get('/v1/jobs', corsMw, authMw, rateLimitMw, listJobsHandler);
+
+// Phase 4 billing. The webhook is unauthenticated by design — the Stripe
+// signature IS the credential. Checkout accepts optional key auth (upgrade in
+// place vs keyless new-customer flow); reveal and portal speak for themselves.
+app.post('/v1/billing/checkout', optionalAuthMw, checkoutHandler);
+app.get('/v1/billing/reveal', revealHandler);
+app.post('/v1/billing/portal', corsMw, authMw, rateLimitMw, portalHandler);
+app.post('/v1/billing/webhook', webhookHandler);
+
 // Public endpoints.
 app.get('/v1/trust-lists', async (c) => c.json(await trustListsPayload()));
 
@@ -83,7 +104,7 @@ app.onError((err, c) => {
     return problem(500, 'internal_error', { detail: 'Unexpected server error.' });
 });
 
-export { JobRunner };
+export { JobRunner, QuotaCounter };
 
 export default {
     fetch: (request, env, ctx) => app.fetch(request, env, ctx),

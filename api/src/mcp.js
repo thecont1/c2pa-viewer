@@ -11,7 +11,8 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { createMcpHandler } from 'agents/mcp/server';
 import * as z from 'zod/v4';
 
-import { authenticateBearer, checkQuota } from './auth.js';
+import { authenticateBearer } from './auth.js';
+import { reserveQuota, releaseQuota } from './quota.js';
 import { problem } from './errors.js';
 import {
     runVerification,
@@ -217,19 +218,32 @@ async function acquireToolInput(args, env) {
 async function runMeteredVerification(args, context, resultInclude) {
     // REST performs quota before any verification work. Rate limiting is done
     // once per authenticated /mcp HTTP request in Hono middleware; the quota
-    // check is necessarily tool-aware and therefore lives here.
-    const quotaFailure = await checkQuota(context.env.DB, context.keyRow);
-    if (quotaFailure) throw toolInputError(quotaFailure.detail);
+    // reservation is necessarily tool-aware and therefore lives here. The
+    // commit lands inside runVerification on success; every failure shape
+    // releases in the finally below.
+    let reservation;
+    try {
+        reservation = await reserveQuota(context.env, context.keyRow);
+    } catch (e) {
+        console.error('quota reserve failed:', e);
+        throw toolInputError('Usage store unavailable.');
+    }
+    if (!reservation) throw toolInputError(`Monthly quota of ${context.keyRow.quota_monthly} verifications exhausted.`);
 
-    const input = await acquireToolInput(args, context.env);
-    return runVerification(context.env, context.executionCtx, context.keyRow, input.bytes, input.declaredType, {
-        filename: input.filename,
-        trustAnchors: context.trustAnchors,
-        trust: args.trust,
-        include: resultInclude,
-        strip_gps: args.strip_gps,
-        keyKind: context.keyKind,
-    });
+    try {
+        const input = await acquireToolInput(args, context.env);
+        return await runVerification(context.env, context.executionCtx, context.keyRow, input.bytes, input.declaredType, {
+            filename: input.filename,
+            trustAnchors: context.trustAnchors,
+            trust: args.trust,
+            include: resultInclude,
+            strip_gps: args.strip_gps,
+            keyKind: context.keyKind,
+            quotaToken: reservation.token,
+        });
+    } finally {
+        await releaseQuota(context.env, context.keyRow, reservation.token);
+    }
 }
 
 function trustStateFromStatus(status) {
