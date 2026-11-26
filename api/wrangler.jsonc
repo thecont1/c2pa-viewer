@@ -98,7 +98,7 @@
       "scheduling_policy": "durable_object",
       "images": {
         "base": {
-          "dockerfile": "container/Dockerfile",
+          "dockerfile": "container-rs/Dockerfile",
           // Paths are relative to api/wrangler.jsonc; the Dockerfile copies
           // packages/core as well as api/container, so the repo root is required.
           "build_context": ".."

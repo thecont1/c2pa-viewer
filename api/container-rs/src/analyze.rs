@@ -156,15 +156,25 @@ pub fn build_exif_entry(bytes: &[u8], mime: &str, filename: &str, content_type: 
     let mut entry = Map::new();
     entry.insert("filename".into(), json!(filename));
     entry.insert("format".into(), json!(format));
-    entry.insert("width".into(), width.map(|w| json!(w)).unwrap_or(Value::Null));
-    entry.insert("height".into(), height.map(|h| json!(h)).unwrap_or(Value::Null));
+    entry.insert("width".into(), width.map(jsnum).unwrap_or(Value::Null));
+    entry.insert("height".into(), height.map(jsnum).unwrap_or(Value::Null));
     entry.insert("file_size_bytes".into(), json!(bytes.len() as u64));
-    entry.insert("file_size_mb".into(), json!(file_size_mb));
+    entry.insert("file_size_mb".into(), jsnum(file_size_mb));
     entry.insert("photography".into(), Value::Object(photography));
     entry.insert("exif".into(), Value::Object(exif_map));
     entry.insert("gps".into(), Value::Object(gps));
     entry.insert("iptc".into(), Value::Object(iptc_out));
     entry
+}
+
+
+// JSON value for a JS number: integral f64s serialize as integers, matching
+// JSON.stringify semantics (JS has no int/float distinction).
+pub fn jsnum(f: f64) -> Value {
+    if f == f.trunc() && f.abs() < 9.0e15 {
+        return json!(f as i64);
+    }
+    json!(f)
 }
 
 // JS String(number) — shortest round-trip decimal; integers drop the dot.

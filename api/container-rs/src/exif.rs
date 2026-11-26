@@ -13,6 +13,13 @@
 // targets exactly that surface rather than the whole TIFF spec.
 
 use serde_json::{json, Value};
+
+fn jsnum(f: f64) -> Value {
+    if f == f.trunc() && f.abs() < 9.0e15 {
+        return json!(f as i64);
+    }
+    json!(f)
+}
 use std::collections::BTreeMap;
 
 pub struct ParsedExif {
@@ -103,13 +110,13 @@ impl<'a> TiffParser<'a> {
                         if den == 0.0 {
                             Value::Null
                         } else {
-                            json!(num / den)
+                            jsnum(num / den)
                         }
                     }
                     // FLOAT / DOUBLE
                     11 => {
                         let bits = self.u32(o);
-                        json!(f32::from_bits(bits) as f64)
+                        jsnum(f32::from_bits(bits) as f64)
                     }
                     12 => {
                         let mut b = [0u8; 8];
@@ -119,7 +126,7 @@ impl<'a> TiffParser<'a> {
                         } else {
                             f64::from_be_bytes(b)
                         };
-                        json!(v)
+                        jsnum(v)
                     }
                     _ => Value::Null,
                 }

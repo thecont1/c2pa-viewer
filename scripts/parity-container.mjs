@@ -1,8 +1,10 @@
 // Capture or compare container /verify outputs for the fixture corpus.
 //   bun scripts/parity-container.mjs capture [baseUrl]   — save reference JSON
 //   bun scripts/parity-container.mjs compare [baseUrl]   — diff live vs reference
-// The reference is produced by the Node container; the compare target is the
-// Rust port. Field-order-sensitive byte diff after canonical JSON.stringify.
+// The reference goldens were captured from the original Node container (now
+// removed, TZ=UTC); the compare target is the Rust container. Do not recapture
+// against Rust — the goldens are the frozen behavioral contract.
+// Field-order-sensitive byte diff after canonical JSON.stringify.
 
 import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
