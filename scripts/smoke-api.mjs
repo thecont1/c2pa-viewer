@@ -20,6 +20,8 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
+import { writeContainerlessWranglerConfig } from './containerless-config.mjs';
+import { applyLocalMigrations } from './migrate-local.mjs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
@@ -69,6 +71,7 @@ function d1(args) {
         cwd: API_DIR, encoding: 'utf8',
     });
     if (res.status !== 0) throw new Error(`d1 execute failed: ${res.stdout}\n${res.stderr}`);
+    return res.stdout;
 }
 
 async function portFree(port) {
@@ -78,8 +81,8 @@ async function portFree(port) {
     } catch { return true; }
 }
 
-function startWrangler(port, extraArgs) {
-    const child = spawn(WRANGLER, ['dev', '--local', '--port', String(port), ...extraArgs], {
+function startWrangler(port, extraArgs, configPath) {
+    const child = spawn(WRANGLER, ['dev', '--local', '-c', configPath, '--port', String(port), ...extraArgs], {
         cwd: API_DIR, stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.log = '';
@@ -178,7 +181,7 @@ async function main() {
 
     // ---- seed local D1 -------------------------------------------------
     console.log('== seeding local D1 ==');
-    d1(['--file', 'migrations/0001_init.sql']);
+    applyLocalMigrations(API_DIR);
 
     const server = keyctl(['create', '--name', 'smoke-server', '--type', 'server', '--tier', 'free']);
     const browser = keyctl(['create', '--name', 'smoke-browser', '--type', 'browser', '--tier', 'free', '--origins', 'https://embed.example.com']);
@@ -187,9 +190,13 @@ async function main() {
     const revoked = keyctl(['create', '--name', 'smoke-revoked', '--type', 'server', '--tier', 'free']);
     spawnSync('bun', ['scripts/keyctl.mjs', 'revoke', '--id', revoked.id], { cwd: ROOT, encoding: 'utf8' });
 
-    // seed the quota key at quota-1 (free tier quota is 500)
+    // seed the quota key at quota-1 (the tier default moves with pricing — read it back)
     const month = new Date().toISOString().slice(0, 7);
-    d1(['--command', `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at) VALUES ('${quota.id}', '${month}', 499, 0, '${new Date().toISOString()}') ON CONFLICT (key_id, month) DO UPDATE SET verify_count = 499;`]);
+    const quotaOut = d1(['--command', `SELECT quota_monthly FROM keys WHERE id = '${quota.id}'`, '--json']);
+    const quotaMonthly = Number(((JSON.parse(quotaOut)[0] || {}).results || [])[0]?.quota_monthly || 0);
+    if (!quotaMonthly) throw new Error('smoke-quota key has no monthly quota — cannot test the boundary');
+    const seedCount = quotaMonthly - 1;
+    d1(['--command', `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at) VALUES ('${quota.id}', '${month}', ${seedCount}, 0, '${new Date().toISOString()}') ON CONFLICT (key_id, month) DO UPDATE SET verify_count = ${seedCount};`]);
     console.log('  keys seeded (server/browser/test/quota/revoked)');
 
     // ---- boot upstream fixture server + wrangler boot A -----------------
@@ -197,7 +204,8 @@ async function main() {
     console.log(`== fixture upstream on 127.0.0.1:${PORT_UPSTREAM} ==`);
 
     console.log('== boot A: wrangler dev --local (ALLOW_LOCAL_UPSTREAM=1) ==');
-    const childA = startWrangler(PORT_A, ['--var', 'ALLOW_LOCAL_UPSTREAM:1']);
+    const wranglerConfig = await writeContainerlessWranglerConfig(API_DIR);
+    const childA = startWrangler(PORT_A, ['--var', 'ALLOW_LOCAL_UPSTREAM:1'], wranglerConfig);
     const children = [childA];
     const cleanup = async () => { for (const c of children) await stopChild(c); upstream.stop(true); };
     process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
@@ -466,7 +474,7 @@ async function main() {
                 if (r2.status === 429) { converged = true; break; }
                 await sleep(400);
             }
-            row('quota: first verify at count 499 → 200 (reaches quota)',
+            row('quota: first verify at count quota-1 → 200 (reaches quota)',
                 r1.status === 200, `status=${r1.status}`);
             row('quota: next verify → 429 quota_exceeded (polled until write landed)',
                 converged && r2 && problemShape(r2.json, 'quota_exceeded'),
@@ -664,7 +672,7 @@ async function main() {
 
     // ---- boot B: SSRF guard fully active ---------------------------------
     console.log('== boot B: wrangler dev --local (SSRF guard fully active) ==');
-    const childB = startWrangler(PORT_B, []);
+    const childB = startWrangler(PORT_B, [], wranglerConfig);
     children.push(childB);
     try {
         await waitHealth(childB, BASE_B);

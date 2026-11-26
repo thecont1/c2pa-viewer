@@ -24,11 +24,13 @@
 // The wrangler dev process and fixture upstream are killed in finally paths.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
+import { writeContainerlessWranglerConfig } from './containerless-config.mjs';
+import { applyLocalMigrations } from './migrate-local.mjs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
@@ -200,8 +202,8 @@ function d1(args) {
     if (res.status !== 0) throw new Error(`d1 execute failed: ${res.stdout}\n${res.stderr}`);
 }
 
-function startWrangler(port) {
-    const child = spawn(WRANGLER, ['dev', '--local', '--port', String(port), '--var', 'ALLOW_LOCAL_UPSTREAM:1', '--var', 'R2_ACCESS_KEY_ID:contract-test-only', '--var', 'R2_SECRET_ACCESS_KEY:contract-test-only'], {
+function startWrangler(port, configPath) {
+    const child = spawn(WRANGLER, ['dev', '--local', '-c', configPath, '--port', String(port), '--var', 'ALLOW_LOCAL_UPSTREAM:1', '--var', 'R2_ACCESS_KEY_ID:contract-test-only', '--var', 'R2_SECRET_ACCESS_KEY:contract-test-only'], {
         cwd: API_DIR,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
@@ -325,7 +327,7 @@ function implementedV1Routes() {
 
 function checkSurface() {
     console.log('== implemented surface vs OpenAPI surface ==');
-    const expected = PHASE1_OPERATIONS
+    const expected = ALL_OPERATIONS
         .map(({ specPath, method }) => ({ method, path: `/v1${specPath}` }))
         .sort((a, b) => `${a.path} ${a.method}`.localeCompare(`${b.path} ${b.method}`));
     const actual = implementedV1Routes();
@@ -335,8 +337,10 @@ function checkSurface() {
         `expected=[${fmt(expected)}] actual=[${fmt(actual)}]`);
 
     const jobsInSpec = ALL_OPERATIONS.filter((op) => op.specPath.startsWith('/jobs'));
+    const jobsRoutesImplemented = ['get /v1/jobs', 'post /v1/jobs', 'get /v1/jobs/{job_id}']
+        .every((want) => actual.some((r) => `${r.method} ${r.path}` === want));
     row('OpenAPI jobs operations are present in the implemented operation set',
-        jobsInSpec.length === 2 && jobsInSpec.every((op) => PHASE1_OPERATION_IDS.includes(op.operationId)),
+        jobsInSpec.length === 3 && jobsRoutesImplemented,
         `${jobsInSpec.length} jobs operations documented`);
 }
 
@@ -587,8 +591,7 @@ async function main() {
     checkSurface();
 
     console.log('\n== seeding local D1 ==');
-    d1(['--file', 'migrations/0001_init.sql']);
-    d1(['--file', 'migrations/0002_jobs.sql']);
+    applyLocalMigrations(API_DIR);
     const server = keyctl(['create', '--name', 'contract-server', '--type', 'server', '--tier', 'free']);
     const revoked = keyctl(['create', '--name', 'contract-revoked', '--type', 'server', '--tier', 'free']);
     spawnSync('bun', ['scripts/keyctl.mjs', 'revoke', '--id', revoked.id], { cwd: ROOT, encoding: 'utf8' });
@@ -602,7 +605,7 @@ async function main() {
     const upstream = startFixtureServer(upstreamPort);
     console.log(`\n== fixture upstream on 127.0.0.1:${upstreamPort} ==`);
     console.log(`== wrangler dev --local on port ${apiPort} (ALLOW_LOCAL_UPSTREAM=1) ==`);
-    const child = startWrangler(apiPort);
+    const child = startWrangler(apiPort, await writeContainerlessWranglerConfig(API_DIR));
 
     const cleanup = async () => {
         await stopChild(child);

@@ -14,6 +14,8 @@ import net from 'node:net';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
+import { writeContainerlessWranglerConfig } from './containerless-config.mjs';
+import { applyLocalMigrations } from './migrate-local.mjs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -83,8 +85,8 @@ async function portFree(port) {
     });
 }
 
-function startWrangler(port) {
-    const child = spawn(WRANGLER, ['dev', '--local', '--port', String(port), '--var', 'ALLOW_LOCAL_UPSTREAM:1', '--var', 'R2_ACCESS_KEY_ID:mcp-smoke-test-only', '--var', 'R2_SECRET_ACCESS_KEY:mcp-smoke-test-only'], {
+function startWrangler(port, configPath) {
+    const child = spawn(WRANGLER, ['dev', '--local', '-c', configPath, '--port', String(port), '--var', 'ALLOW_LOCAL_UPSTREAM:1', '--var', 'R2_ACCESS_KEY_ID:mcp-smoke-test-only', '--var', 'R2_SECRET_ACCESS_KEY:mcp-smoke-test-only'], {
         cwd: API_DIR,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
@@ -219,8 +221,7 @@ async function main() {
     }
 
     console.log('== seeding local D1 ==');
-    d1(['--file', 'migrations/0001_init.sql']);
-    d1(['--file', 'migrations/0002_jobs.sql']);
+    applyLocalMigrations(API_DIR);
     const server = keyctl(['create', '--name', 'mcp-smoke-server', '--type', 'server', '--tier', 'pro']);
     const meter = keyctl(['create', '--name', 'mcp-smoke-meter', '--type', 'server', '--tier', 'pro']);
     const quota = keyctl(['create', '--name', 'mcp-smoke-quota', '--type', 'server', '--tier', 'free']);
@@ -229,13 +230,18 @@ async function main() {
     spawnSync('bun', ['scripts/keyctl.mjs', 'revoke', '--id', revoked.id], { cwd: ROOT, encoding: 'utf8' });
 
     const month = new Date().toISOString().slice(0, 7);
-    d1(['--command', `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at) VALUES ('${quota.id}', '${month}', 499, 0, '${new Date().toISOString()}') ON CONFLICT (key_id, month) DO UPDATE SET verify_count = 499;`]);
+    const quotaRows = d1Query(`SELECT quota_monthly FROM keys WHERE id = '${quota.id}'`);
+    const quotaMonthly = quotaRows.length ? Number(quotaRows[0].quota_monthly) : null;
+    if (!quotaMonthly) throw new Error('mcp-smoke-quota key has no monthly quota — cannot test the boundary');
+    const seedCount = quotaMonthly - 1;
+    d1(['--command', `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at) VALUES ('${quota.id}', '${month}', ${seedCount}, 0, '${new Date().toISOString()}') ON CONFLICT (key_id, month) DO UPDATE SET verify_count = ${seedCount};`]);
     console.log('  keys seeded (server/meter/quota/revoked)');
 
     const upstream = startFixtureServer(PORT_UPSTREAM);
     console.log(`== fixture upstream on 127.0.0.1:${PORT_UPSTREAM} ==`);
     console.log('== boot: wrangler dev --local (ALLOW_LOCAL_UPSTREAM=1) ==');
-    const child = startWrangler(PORT_API);
+    const wranglerConfig = await writeContainerlessWranglerConfig(API_DIR);
+    const child = startWrangler(PORT_API, wranglerConfig);
     const clients = [];
 
     const cleanup = async () => {
@@ -484,8 +490,8 @@ async function main() {
             const first = await quotaClient.callTool({ name: 'verify_image', arguments: { url: urlFor('C.jpg') } });
             await sleep(1500);
             const second = await quotaClient.callTool({ name: 'verify_image', arguments: { url: urlFor('C.jpg') } });
-            row('quota: verify at count 499 succeeds, next verify is rejected as a tool error',
-                first.isError !== true && toolError(second, /Monthly quota of 500 verifications exhausted/),
+            row('quota: verify at count quota-1 succeeds, next verify is rejected as a tool error',
+                first.isError !== true && toolError(second, new RegExp(`Monthly quota of ${quotaMonthly} verifications exhausted`)),
                 `first=${first.isError || false} secondError=${textOf(second)}`);
         }
 

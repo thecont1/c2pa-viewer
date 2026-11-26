@@ -75,3 +75,4 @@ api/container-rs/target
 # wrangler local secrets — never commit
 .dev.vars
 api/.dev.vars
+.wrangler-contract.gen.json
