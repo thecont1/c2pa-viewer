@@ -719,7 +719,7 @@ paths:
                   tier: { type: string, enum: [free, pro, scale] }
                   scopes: { type: array, items: { type: string } }
                   quota_monthly: { type: [integer, "null"] }
-                  billing_status: { type: string, enum: [none, active, past_due, canceled] }
+                  billing_status: { type: string, enum: [none, active, past_due, unpaid, canceled] }
                   created_at: { type: string }
                   rotated_at: { type: [string, "null"] }
                   usage:

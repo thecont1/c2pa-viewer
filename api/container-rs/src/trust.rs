@@ -26,13 +26,26 @@ pub fn has_blocked_remote_url(bytes: &[u8]) -> bool {
             let is_http = lc(bytes[i + 1]) == b't' && lc(bytes[i + 2]) == b't' && lc(bytes[i + 3]) == b'p';
             let is_https = is_http && lc(bytes[i + 4]) == b's';
             let sep = if is_https { 5 } else { 4 };
-            if is_http
-                && i + sep + 2 < n
-                && bytes[i + sep] == b':'
-                && bytes[i + sep + 1] == b'/'
-                && bytes[i + sep + 2] == b'/'
-            {
-                let mut end = i + sep + 3;
+            // The separator must accept backslash-mixed forms: JSON producers
+            // may escape slashes as \/, so a manifest can carry
+            // "http:\/\/evil\/..." — the WHATWG parser treats \ as / for
+            // special schemes, but the scan never reaches it when it insists
+            // on a literal //. Require a colon then at least two separator
+            // bytes drawn from {/, \} with at least one slash.
+            if is_http && i + sep + 2 < n && bytes[i + sep] == b':' {
+                let mut k = i + sep + 1;
+                let mut slashes = 0usize;
+                while k < n && (bytes[k] == b'/' || bytes[k] == b'\\') {
+                    if bytes[k] == b'/' {
+                        slashes += 1;
+                    }
+                    k += 1;
+                }
+                if slashes < 1 || k - (i + sep + 1) < 2 {
+                    i += 1;
+                    continue;
+                }
+                let mut end = k;
                 while end < n && end - i < 2083 {
                     let c = bytes[end];
                     if c <= 0x20 || c == 0x22 || c == 0x27 || c == 0x3c || c == 0x3e || c == 0x60 || c >= 0x7f {
@@ -130,3 +143,47 @@ pub fn signer_trust_label(state: Option<&str>, basis: Option<&str>) -> Option<&'
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_blocks_plain_loopback() {
+        assert!(has_blocked_remote_url(br#""url": "http://127.0.0.1/x""#));
+    }
+
+    #[test]
+    fn scan_blocks_json_escaped_slashes() {
+        // JSON producers may escape / as \/ — the scan must see through it.
+        assert!(has_blocked_remote_url(br#""url": "http:\/\/127.0.0.1\/secret""#));
+        assert!(has_blocked_remote_url(br#""url": "http:\/\/169.254.169.254\/latest""#));
+    }
+
+    #[test]
+    fn scan_allows_public_hosts_both_forms() {
+        assert!(!has_blocked_remote_url(br#""url": "http://example.com/x""#));
+        assert!(!has_blocked_remote_url(br#""url": "https:\/\/example.com\/x""#));
+    }
+
+    #[test]
+    fn scan_blocks_private_and_nat64_forms() {
+        assert!(has_blocked_remote_url(br#""u":"https://10.0.0.1/""#));
+        assert!(has_blocked_remote_url(br#""u":"https://[64:ff9b::7f00:1]/""#));
+        assert!(has_blocked_remote_url(br#""u":"https://[::1]/""#));
+    }
+
+    #[test]
+    fn scan_allows_public_ipv6() {
+        // 2606:4700:4700::1111 is Cloudflare public DNS — globally routable.
+        assert!(!has_blocked_remote_url(br#""u":"https://[2606:4700:4700::1111]/""#));
+    }
+
+    #[test]
+    fn scan_192_0_narrowing() {
+        assert!(crate::ssrf::is_blocked_host("192.0.0.1"));   // protocol assignments /24
+        assert!(crate::ssrf::is_blocked_host("192.0.2.1"));   // TEST-NET-1 documentation
+        assert!(!crate::ssrf::is_blocked_host("192.0.3.1"));  // ordinary public space
+    }
+}
+

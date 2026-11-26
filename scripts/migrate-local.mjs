@@ -34,6 +34,7 @@ export function applyLocalMigrations(apiDir) {
         run(['--file', 'migrations/0003_billing.sql']);
     }
 
-    // 0004 is IF NOT EXISTS throughout — unconditionally safe.
+    // 0004/0005 are IF NOT EXISTS throughout — unconditionally safe.
     run(['--file', 'migrations/0004_quota_receipts.sql']);
+    run(['--file', 'migrations/0005_turnstile_tokens.sql']);
 }

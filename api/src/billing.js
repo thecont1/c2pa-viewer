@@ -238,6 +238,32 @@ export async function revealHandler(c) {
     }, { status: 201 });
 }
 
+// Anonymous billing endpoints cost Stripe round-trips (reveal does two per
+// call) or shape financial state (webhook). They carry no API key, so they
+// rate-limit per client IP — generous enough for legitimate checkout polling
+// and Stripe's retry cadence, tight enough to blunt scripted abuse.
+export async function billingRateLimitMw(c, next) {
+    if (!c.env.BILLING_RATELIMIT) {
+        console.error('BILLING_RATELIMIT binding missing — worker misconfigured');
+        return problem(500, 'internal_error', { detail: 'rate limiting is not configured' });
+    }
+    const ip = c.req.header('cf-connecting-ip') || 'unknown';
+    let outcome;
+    try {
+        outcome = await c.env.BILLING_RATELIMIT.limit({ key: `billing:${ip}` });
+    } catch (e) {
+        console.error('BILLING_RATELIMIT failed:', e);
+        return problem(500, 'internal_error', { detail: 'rate limiting unavailable' });
+    }
+    if (!outcome.success) {
+        return problem(429, 'rate_limited', {
+            detail: 'Rate limit exceeded — retry shortly.',
+            headers: { 'Retry-After': '30' },
+        });
+    }
+    await next();
+}
+
 export async function portalHandler(c) {
     if (!billingConfigured(c.env)) return notConfigured();
     const keyRow = c.get('keyRow');

@@ -79,6 +79,29 @@ export async function signupFreeHandler(c) {
         return problem(403, 'forbidden', { detail: 'Turnstile verification failed.' });
     }
 
+    // One-use enforcement: Cloudflare validates the same token repeatedly
+    // within its validity window, so a solved challenge could otherwise mint
+    // keys until the IP throttle bites. The token hash is claimed before the
+    // key insert; a failed insert releases the claim so legitimate retries
+    // after a transient error are not locked out.
+    const tokenHash = await sha256HexText(token);
+    try {
+        await c.env.DB.batch([
+            c.env.DB.prepare(
+                `INSERT INTO turnstile_tokens (token_hash, created_at) VALUES (?, ?)`
+            ).bind(tokenHash, nowIso()),
+            c.env.DB.prepare(
+                `DELETE FROM turnstile_tokens WHERE created_at < ?`
+            ).bind(new Date(Date.now() - 24 * 3600 * 1000).toISOString()),
+        ]);
+    } catch (e) {
+        if (String(e).includes('UNIQUE')) {
+            return problem(403, 'forbidden', { detail: 'this verification was already used — complete the challenge again.' });
+        }
+        console.error('turnstile token claim failed:', e);
+        return problem(500, 'internal_error', { detail: 'signup unavailable — retry' });
+    }
+
     const { plaintext, displayPrefix } = generateKey('live');
     const hash = await sha256HexText(plaintext);
     const id = crypto.randomUUID();
@@ -90,6 +113,11 @@ export async function signupFreeHandler(c) {
         ).bind(id, hash, displayPrefix, name, TIER_QUOTAS.free, now).run();
     } catch (e) {
         console.error('signup key insert failed:', e);
+        try {
+            await c.env.DB.prepare('DELETE FROM turnstile_tokens WHERE token_hash = ?').bind(tokenHash).run();
+        } catch (cleanupErr) {
+            console.error('turnstile token release failed:', cleanupErr);
+        }
         return problem(500, 'internal_error', { detail: 'key creation failed' });
     }
 

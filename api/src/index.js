@@ -16,7 +16,7 @@ import { corsMw, dashboardCorsMw, preflightMw } from './cors.js';
 import { verifyHandler, miniHandler } from './verify.js';
 import { createJobHandler, getJobHandler } from './jobs.js';
 import { signupFreeHandler, getKeyHandler, getUsageHandler, rotateKeyHandler, revokeKeyHandler, listJobsHandler } from './keyman.js';
-import { checkoutHandler, revealHandler, portalHandler, webhookHandler } from './billing.js';
+import { checkoutHandler, revealHandler, portalHandler, webhookHandler, billingRateLimitMw } from './billing.js';
 import { jobsQueueHandler } from './jobs-consumer.js';
 import { JobRunner } from './job-runner.js';
 import { QuotaCounter } from './quota-do.js';
@@ -85,10 +85,10 @@ app.get('/v1/jobs', dashboardCorsMw, corsMw, authMw, rateLimitMw, listJobsHandle
 // Phase 4 billing. The webhook is unauthenticated by design — the Stripe
 // signature IS the credential. Checkout accepts optional key auth (upgrade in
 // place vs keyless new-customer flow); reveal and portal speak for themselves.
-app.post('/v1/billing/checkout', dashboardCorsMw, optionalAuthMw, checkoutHandler);
-app.get('/v1/billing/reveal', dashboardCorsMw, revealHandler);
+app.post('/v1/billing/checkout', dashboardCorsMw, billingRateLimitMw, optionalAuthMw, checkoutHandler);
+app.get('/v1/billing/reveal', dashboardCorsMw, billingRateLimitMw, revealHandler);
 app.post('/v1/billing/portal', dashboardCorsMw, corsMw, authMw, rateLimitMw, portalHandler);
-app.post('/v1/billing/webhook', webhookHandler);
+app.post('/v1/billing/webhook', billingRateLimitMw, webhookHandler);
 
 // Public endpoints.
 app.get('/v1/trust-lists', async (c) => c.json(await trustListsPayload()));

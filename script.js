@@ -114,11 +114,27 @@ async function loadExifMetadataFromApi(uri) {
     }
 }
 
+
+// HTML-escape for untrusted metadata interpolated into innerHTML — signed
+// assets are attacker-controlled input, and the dashboard shares this origin
+// (its API key sits in localStorage). Attribute breakouts and script injection
+// through crafted IPTC/CreativeWork strings must not be possible.
+function escHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// URL scheme allowlist for metadata-driven hrefs — escaping cannot stop a
+// javascript: URL, so anything outside http(s)/mailto is dropped.
+function safeUrl(url, { allowMailto = false } = {}) {
+    const u = String(url ?? '').trim();
+    const ok = /^https?:\/\//i.test(u) || (allowMailto && /^mailto:/i.test(u));
+    return ok ? u : '#';
+}
+
 function displayError(message) {
     const sidebarContent = document.querySelector('.sidebar-content');
     sidebarContent.innerHTML = `
         <div class="error">
-            <strong>Error:</strong> ${message}
+            <strong>Error:</strong> ${escHtml(message)}
         </div>
     `;
 }
@@ -247,22 +263,22 @@ function renderIPTCMetadata(metadata) {
     
     // Add title if available
     if (iptc.title) {
-        html += `<h3 style="margin-top: 1rem; margin-bottom: 0.5rem; font-size: 1.1rem; font-weight: 600;">${iptc.title}</h3>`;
+        html += `<h3 style="margin-top: 1rem; margin-bottom: 0.5rem; font-size: 1.1rem; font-weight: 600;">${escHtml(iptc.title)}</h3>`;
     }
     
     // Add description
     const description = iptc.description || metadata.photography?.description || 'No description available';
-    html += `<p class="description">${description}</p>`;
+    html += `<p class="description">${escHtml(description)}</p>`;
     
     // Add location if available
     if (iptc.location || iptc.city) {
         const location = [iptc.location, iptc.city].filter(Boolean).join(', ');
-        html += `<p style="margin-top: 0.5rem; font-style: italic; color: #666;">📍 ${location}</p>`;
+        html += `<p style="margin-top: 0.5rem; font-style: italic; color: #666;">📍 ${escHtml(location)}</p>`;
     }
     
     // Add keywords if available
     if (iptc.keywords) {
-        html += `<p style="margin-top: 0.5rem; font-size: 0.9rem;"><strong>Keywords:</strong> ${iptc.keywords}</p>`;
+        html += `<p style="margin-top: 0.5rem; font-size: 0.9rem;"><strong>Keywords:</strong> ${escHtml(iptc.keywords)}</p>`;
     }
     
     descSection.innerHTML = html;
@@ -299,8 +315,8 @@ function renderGPSMetadata(metadata) {
         const gpsElement = document.getElementById('gpsCoordinates');
         const gpsItem = document.getElementById('gpsItem');
         if (gpsElement) {
-            const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${gps.latitude},${gps.longitude}`;
-            gpsElement.innerHTML = `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">${formattedLat}, ${formattedLon}</a>`;
+            const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gps.latitude)},${encodeURIComponent(gps.longitude)}`;
+            gpsElement.innerHTML = `<a href="${escHtml(mapsUrl)}" target="_blank" rel="noopener noreferrer">${escHtml(formattedLat)}, ${escHtml(formattedLon)}</a>`;
         }
         if (gpsItem) {
             gpsItem.style.display = 'flex';
@@ -519,10 +535,10 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
             
             return `
                 <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
-                    <strong>${icon} ${actionLabel}</strong>
-                    <p>${description}</p>
-                    ${item.software ? `<p class="timestamp">Tool: ${item.software}</p>` : ''}
-                    ${item.when ? `<p class="timestamp">${item.when}</p>` : ''}
+                    <strong>${icon} ${escHtml(actionLabel)}</strong>
+                    <p>${escHtml(description)}</p>
+                    ${item.software ? `<p class="timestamp">Tool: ${escHtml(item.software)}</p>` : ''}
+                    ${item.when ? `<p class="timestamp">${escHtml(item.when)}</p>` : ''}
                 </li>
             `;
         } else if (item.name === 'Ingredient') {
@@ -530,58 +546,58 @@ function renderC2PAMetadata(provenance, hasC2PA = true) {
                 <li class="provenance-item verified ${collapsedClass}" ${hiddenClass}>
                     <strong>📸 Original Image</strong>
                     <p>Source image with embedded C2PA metadata</p>
-                    ${item.relationship ? `<p class="timestamp">Relationship: ${item.relationship}</p>` : ''}
+                    ${item.relationship ? `<p class="timestamp">Relationship: ${escHtml(item.relationship)}</p>` : ''}
                 </li>
             `;
         } else if (item.trust) {
             return `
                 <li class="provenance-item ${item.trust.startsWith('Trusted') ? 'verified' : ''} ${collapsedClass}" ${hiddenClass}>
                     <strong>🔏 Signer Trust</strong>
-                    <p>${item.trust}</p>
+                    <p>${escHtml(item.trust)}</p>
                 </li>
             `;
         } else if (item.verification) {
             return `
                 <li class="provenance-item ${item.verification.includes('Valid') ? 'verified' : ''} ${collapsedClass}" ${hiddenClass}>
                     <strong>✓ Verification</strong>
-                    <p>${item.verification}</p>
-                    ${item.issuer ? `<p class="timestamp">Issuer: ${item.issuer}</p>` : ''}
+                    <p>${escHtml(item.verification)}</p>
+                    ${item.issuer ? `<p class="timestamp">Issuer: ${escHtml(item.issuer)}</p>` : ''}
                 </li>
             `;
         } else if (item.generator) {
             return `
                 <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
                     <strong>⚙️ Claim Generator</strong>
-                    <p>${item.generator}</p>
-                    ${item.version ? `<p class="timestamp">Version: ${item.version}</p>` : ''}
+                    <p>${escHtml(item.generator)}</p>
+                    ${item.version ? `<p class="timestamp">Version: ${escHtml(item.version)}</p>` : ''}
                 </li>
             `;
         } else if (item.issuer && item.name === 'Issued By') {
             return `
                 <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
                     <strong>🏛️ Issued By</strong>
-                    <p>${item.issuer}</p>
+                    <p>${escHtml(item.issuer)}</p>
                 </li>
             `;
         } else if (item.date && item.name === 'Issued On') {
             return `
                 <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
                     <strong>📅 Issued On</strong>
-                    <p>${item.date}</p>
+                    <p>${escHtml(item.date)}</p>
                 </li>
             `;
         } else if (item.author) {
             return `
                 <li class="provenance-item verified ${collapsedClass}" ${hiddenClass}>
                     <strong>👤 Author</strong>
-                    <p>${item.author}</p>
+                    <p>${escHtml(item.author)}</p>
                 </li>
             `;
         } else if (item.title) {
             return `
                 <li class="provenance-item ${collapsedClass}" ${hiddenClass}>
                     <strong>📝 Title</strong>
-                    <p>${item.title}</p>
+                    <p>${escHtml(item.title)}</p>
                 </li>
             `;
         }
@@ -650,7 +666,10 @@ function renderAuthorInfo(authorInfo) {
     const websiteItem = document.getElementById('authorWebsiteItem');
     const websiteValue = document.getElementById('authorWebsite');
     if (authorInfo.url && websiteItem && websiteValue) {
-        websiteValue.innerHTML = `<a href="${authorInfo.url}" target="_blank" rel="noopener">${authorInfo.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}</a>`;
+        {
+            const u = String(authorInfo.url);
+            websiteValue.innerHTML = `<a href="${escHtml(safeUrl(u))}" target="_blank" rel="noopener">${escHtml(u.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</a>`;
+        }
         websiteItem.style.display = 'flex';
     } else if (websiteItem) {
         websiteItem.style.display = 'none';
@@ -660,7 +679,7 @@ function renderAuthorInfo(authorInfo) {
     const emailItem = document.getElementById('authorEmailItem');
     const emailValue = document.getElementById('authorEmail');
     if (authorInfo.email && emailItem && emailValue) {
-        emailValue.innerHTML = `<a href="mailto:${authorInfo.email}">${authorInfo.email}</a>`;
+        emailValue.innerHTML = `<a href="${escHtml(safeUrl('mailto:' + authorInfo.email, { allowMailto: true }))}">${escHtml(authorInfo.email)}</a>`;
         emailItem.style.display = 'flex';
     } else if (emailItem) {
         emailItem.style.display = 'none';
@@ -750,7 +769,7 @@ function renderAuthorInfo(authorInfo) {
             let socialHtml = '';
             allSocialLinks.forEach(url => {
                 const platform = getSocialPlatform(url);
-                socialHtml += `<a href="${url}" target="_blank" rel="noopener" class="social-link ${platform}" title="${platform}">${getSocialIcon(platform)}</a>`;
+                socialHtml += `<a href="${escHtml(safeUrl(url))}" target="_blank" rel="noopener" class="social-link ${escHtml(platform)}" title="${escHtml(platform)}">${getSocialIcon(platform)}</a>`;
             });
             socialLinks.innerHTML = socialHtml;
             socialContainer.style.display = 'flex';
@@ -807,7 +826,7 @@ function renderProvenance(metadata) {
         </li>
         <li class="provenance-item">
             <strong>Original Capture</strong>
-            <p>Taken on ${formatDate(metadata.photography?.date_original)} with ${metadata.photography?.camera_make} ${metadata.photography?.camera_model}</p>
+            <p>Taken on ${escHtml(formatDate(metadata.photography?.date_original))} with ${escHtml(metadata.photography?.camera_make)} ${escHtml(metadata.photography?.camera_model)}</p>
         </li>
         <li class="provenance-item">
             <strong>Post-processing</strong>
