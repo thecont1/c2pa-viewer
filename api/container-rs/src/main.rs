@@ -41,6 +41,27 @@ fn json_response(status: StatusCode, value: Value) -> Response {
         .unwrap()
 }
 
+
+enum DispatchError {
+    SchedulerClosed,
+    Join(tokio::task::JoinError),
+}
+
+enum AnalysisSetup {
+    RuntimeConstruction,
+    Asset(String),
+}
+
+// Bounded concurrency for analyses, sized by available parallelism — the
+// natural limit for CPU-bound work, not an arbitrary constant.
+fn analysis_semaphore() -> std::sync::Arc<tokio::sync::Semaphore> {
+    static SEM: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    SEM.get_or_init(|| {
+        let n = std::thread::available_parallelism().map(|v| v.get()).unwrap_or(4);
+        std::sync::Arc::new(tokio::sync::Semaphore::new(n))
+    }).clone()
+}
+
 fn err(status: StatusCode, msg: &str) -> Response {
     json_response(status, json!({"error": msg}))
 }
@@ -145,30 +166,54 @@ async fn verify(req: Request) -> Response {
     // Run it on the blocking thread pool with its own current-thread runtime:
     // the timeout then returns on schedule even when parsing spins, and the
     // main runtime's worker threads stay free for the health endpoint.
-    let result = tokio::time::timeout(ANALYZE_TIMEOUT, tokio::task::spawn_blocking(move || {
-        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-            Ok(rt) => rt,
-            Err(_) => return Err("analysis runtime construction failed".to_string()),
+    //
+    // Admission control: concurrent analyses are bounded by the available
+    // parallelism — CPU-bound parsing gains nothing beyond it, while each
+    // additional one multiplies peak memory (the input asset is held for the
+    // whole analysis). Excess requests queue on the semaphore inside the same
+    // timeout budget. The permit moves INTO the blocking closure so it stays
+    // held until the analysis actually returns — releasing it when the
+    // timeout fires would let the queue over-admit while abandoned analyses
+    // are still burning CPU.
+    let sem = analysis_semaphore();
+    let work = async move {
+        let permit = match sem.acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => return Err(DispatchError::SchedulerClosed),
         };
-        rt.block_on(async move {
-            let args = AnalyzeArgs {
-                bytes: &bytes,
-                mime: &mime,
-                filename: &filename,
-                content_type: &mime,
-                anchors: &anchors,
-                trust_profile: &trust_profile,
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit; // held until this closure returns, timeout or not
+            let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                Ok(rt) => rt,
+                Err(_) => return Err(AnalysisSetup::RuntimeConstruction),
             };
-            analyze(&args).await
-        })
-    })).await;
-    match result {
+            rt.block_on(async move {
+                let args = AnalyzeArgs {
+                    bytes: &bytes,
+                    mime: &mime,
+                    filename: &filename,
+                    content_type: &mime,
+                    anchors: &anchors,
+                    trust_profile: &trust_profile,
+                };
+                analyze(&args).await.map_err(AnalysisSetup::Asset)
+            })
+        }).await.map_err(DispatchError::Join)
+    };
+    match tokio::time::timeout(ANALYZE_TIMEOUT, work).await {
         Ok(Ok(Ok(analysis))) => json_response(StatusCode::OK, analysis),
-        Ok(Ok(Err(msg))) => {
+        Ok(Ok(Err(AnalysisSetup::Asset(msg)))) => {
             eprintln!("verify failed: {msg}");
             err(StatusCode::UNPROCESSABLE_ENTITY, "the asset could not be read — corrupt or unparseable input")
         }
-        Ok(Err(join_err)) => {
+        Ok(Ok(Err(AnalysisSetup::RuntimeConstruction))) => {
+            eprintln!("analysis runtime construction failed");
+            err(StatusCode::INTERNAL_SERVER_ERROR, "analysis runtime unavailable")
+        }
+        Ok(Err(DispatchError::SchedulerClosed)) => {
+            err(StatusCode::INTERNAL_SERVER_ERROR, "analysis scheduler unavailable")
+        }
+        Ok(Err(DispatchError::Join(join_err))) => {
             eprintln!("analysis task join failure: {join_err}");
             err(StatusCode::INTERNAL_SERVER_ERROR, "analysis task failed")
         }

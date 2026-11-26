@@ -33,4 +33,7 @@ export function applyLocalMigrations(apiDir) {
     if (!cols.includes('stripe_customer_id')) {
         run(['--file', 'migrations/0003_billing.sql']);
     }
+
+    // 0004 is IF NOT EXISTS throughout — unconditionally safe.
+    run(['--file', 'migrations/0004_quota_receipts.sql']);
 }

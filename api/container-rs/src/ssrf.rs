@@ -37,7 +37,7 @@ pub fn is_blocked_host(hostname: &str) -> bool {
 }
 
 fn is_blocked_ipv4(addr: &Ipv4Addr) -> bool {
-    let [a, b, _, _] = addr.octets();
+    let [a, b, c, _] = addr.octets();
     a == 0
         || a == 10
         || a == 127
@@ -45,7 +45,11 @@ fn is_blocked_ipv4(addr: &Ipv4Addr) -> bool {
         || (a == 192 && b == 168)
         || (a == 169 && b == 254)
         || (a == 100 && (64..=127).contains(&b))
-        || (a == 192 && b == 0) // IETF protocol assignments incl. 192.0.0.0/24
+        // 192.0.0.0/16 is mostly ordinary public space — only the registered
+        // special-purpose prefixes are non-public: 192.0.0.0/24 (IETF protocol
+        // assignments) and 192.0.2.0/24 (TEST-NET-1 documentation). 192.0.3.1
+        // and the rest of the /16 remain eligible.
+        || (a == 192 && b == 0 && (c == 0 || c == 2))
         || (a == 198 && (b == 18 || b == 19)) // benchmark networks
         || a >= 224 // multicast/reserved — never a legitimate remote manifest host
 }

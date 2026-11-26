@@ -49,12 +49,7 @@ fn str_or_unknown(v: Option<&Value>) -> Value {
     }
 }
 
-pub fn format_photography_metadata(exif_entry: &Map<String, Value>, iptc: &Map<String, Value>) -> Map<String, Value> {
-    let empty = Map::new();
-    let exif = exif_entry
-        .get("exif")
-        .and_then(|v| v.as_object())
-        .unwrap_or(&empty);
+pub fn format_photography_metadata(exif: &Map<String, Value>, color_profile_value: &Value, iptc: &Map<String, Value>) -> Map<String, Value> {
 
     let mut out = Map::new();
 
@@ -120,8 +115,7 @@ pub fn format_photography_metadata(exif_entry: &Map<String, Value>, iptc: &Map<S
         _ => "Unknown",
     };
 
-    let color_profile = exif_entry
-        .get("color_profile")
+    let color_profile = Some(color_profile_value)
         .and_then(|v| v.as_str())
         .unwrap_or("Unknown")
         .to_string();

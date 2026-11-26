@@ -217,18 +217,23 @@ export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey
         input.include, input.trust, input.strip_gps ? 1 : 0, null, objectKey, input.size_bytes, now, now
     );
     let row;
+    let inserted = false;
     try {
         await env.DB.batch([insertStmt]);
+        inserted = true;
     } catch (e) {
         if (idem) {
             const existing = await jobRowByIdempotency(env.DB, keyRow.id, idem);
             if (existing) {
-                await releaseQuota(env, keyRow, reservation.token);
                 return { statusCode: 200, payload: await jobCreatedPayload(env, existing), row: existing, idempotentReplay: true };
             }
         }
-        await releaseQuota(env, keyRow, reservation.token);
         throw e;
+    } finally {
+        // The reservation must be released on every non-inserted path —
+        // including the idempotency lookup itself throwing. The replay return
+        // above is covered here as well: no charge for a replayed submission.
+        if (!inserted) await releaseQuota(env, keyRow, reservation.token);
     }
     // The job exists — finalize the charge exactly once.
     await commitQuota(env, keyRow, reservation.token, 0);

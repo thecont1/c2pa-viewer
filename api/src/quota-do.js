@@ -125,14 +125,27 @@ export class QuotaCounter extends DurableObject {
         const remaining = [];
         for (const entry of pending) {
             try {
-                await this.env.DB.prepare(
-                    `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at)
-                     VALUES (?, ?, 1, ?, ?)
-                     ON CONFLICT (key_id, month) DO UPDATE SET
-                       verify_count = verify_count + 1,
-                       bytes_total  = bytes_total + excluded.bytes_total,
-                       updated_at   = excluded.updated_at`
-                ).bind(entry.keyId, entry.month, entry.bytes, nowIso()).run();
+                // Receipt-guarded exactly-once increment in one atomic batch:
+                // a retry after an unacknowledged success finds the receipt
+                // and the conditional increment no-ops. Statement order does
+                // the work — the increment is conditioned on the receipt NOT
+                // yet existing, the receipt insert lands after it.
+                const now = nowIso();
+                await this.env.DB.batch([
+                    this.env.DB.prepare(
+                        `INSERT OR IGNORE INTO usage (key_id, month, verify_count, bytes_total, updated_at)
+                         VALUES (?, ?, 0, 0, ?)`
+                    ).bind(entry.keyId, entry.month, now),
+                    this.env.DB.prepare(
+                        `UPDATE usage SET verify_count = verify_count + 1, bytes_total = bytes_total + ?, updated_at = ?
+                         WHERE key_id = ? AND month = ?
+                           AND NOT EXISTS (SELECT 1 FROM quota_receipts WHERE receipt_id = ?)`
+                    ).bind(entry.bytes, now, entry.keyId, entry.month, entry.id),
+                    this.env.DB.prepare(
+                        `INSERT OR IGNORE INTO quota_receipts (receipt_id, key_id, month, created_at)
+                         VALUES (?, ?, ?, ?)`
+                    ).bind(entry.id, entry.keyId, entry.month, now),
+                ]);
             } catch (e) {
                 console.error('quota D1 ledger write failed (will retry):', e);
                 remaining.push(entry);
@@ -182,11 +195,16 @@ export class QuotaCounter extends DurableObject {
                 }
                 const entry = state.reserved[token];
                 delete state.reserved[token];
-                state.consumed += 1;
-                await this._put(state);
                 // The ledger month is the reservation's own month — a commit
                 // straddling midnight UTC counts where the verification started.
                 const ledgerMonth = entry && typeof entry === 'object' && entry.month ? entry.month : month;
+                // consumed tracks the CURRENT month only: a carried-over
+                // reservation from last month must not inflate this month's
+                // count — its ledger row already landed in the prior month.
+                if (ledgerMonth === state.month) {
+                    state.consumed += 1;
+                }
+                await this._put(state);
                 this.ctx.waitUntil(this.incrementD1(keyId, ledgerMonth, op.bytes));
                 return Response.json({ ok: true, transitioned: true, consumed: state.consumed });
             }
@@ -212,6 +230,25 @@ export class QuotaCounter extends DurableObject {
                 await this._put(state);
                 this.ctx.waitUntil(this.incrementD1(keyId, month, op.bytes));
                 return Response.json({ ok: true, consumed: state.consumed });
+            }
+
+            case 'finalize': {
+                // Key-rotation handoff: the successor's seed must account for
+                // every verification the predecessor already accepted. Flush
+                // the pending ledger synchronously so consumed reflects all
+                // committed work, then report consumed plus the still-active
+                // reservations — the seed conservatively pre-counts in-flight
+                // verifications, so a late commit cannot slip past the
+                // successor's counter. (Late commits still write the
+                // predecessor's ledger row for audit; nobody reads it for
+                // quota afterward.)
+                await this._flushLedger().catch((e) => console.error('finalize flush failed:', e));
+                return Response.json({
+                    ok: true,
+                    consumed: state.consumed,
+                    active: Object.keys(state.reserved).length,
+                    month: state.month,
+                });
             }
 
             case 'peek': {

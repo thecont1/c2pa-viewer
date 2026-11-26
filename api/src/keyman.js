@@ -166,15 +166,47 @@ export async function rotateKeyHandler(c) {
     // seeds first-touch state from exactly this row, so the allowance follows
     // the customer rather than the secret.
     const month = now.slice(0, 7);
+    // Seed from the predecessor's live QuotaCounter, not the bare ledger:
+    // finalize flushes every accepted verification synchronously and reports
+    // consumed plus still-active reservations. Pre-counting the in-flight
+    // reservations means no commit that lands after the rotation can slip
+    // past the successor's counter — the handoff is closed rather than
+    // best-effort. Uncontended rotations carry exactly the existing count.
     let carriedUsage = 0;
-    try {
-        const usageRow = await c.env.DB.prepare(
-            'SELECT verify_count, bytes_total FROM usage WHERE key_id = ? AND month = ?'
-        ).bind(row.id, month).first();
-        if (usageRow) carriedUsage = usageRow.verify_count || 0;
-    } catch (e) {
-        console.error('rotation usage carry read failed:', e);
-        return problem(500, 'internal_error', { detail: 'usage store unavailable' });
+    let carriedBytes = 0;
+    let seedSource = 'none';
+    if (c.env.QUOTA_COUNTER) {
+        try {
+            const stub = c.env.QUOTA_COUNTER.get(c.env.QUOTA_COUNTER.idFromName(row.id));
+            const resp = await stub.fetch('https://quota-counter/', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ key_id: row.id, month, op: 'finalize' }),
+            });
+            if (resp.ok) {
+                const fin = await resp.json();
+                if (fin.month === month) {
+                    carriedUsage = (fin.consumed || 0) + (fin.active || 0);
+                    seedSource = 'finalize';
+                }
+            }
+        } catch (e) {
+            console.error('rotation finalize read failed, falling back to ledger:', e);
+        }
+    }
+    if (seedSource === 'none') {
+        try {
+            const usageRow = await c.env.DB.prepare(
+                'SELECT verify_count, bytes_total FROM usage WHERE key_id = ? AND month = ?'
+            ).bind(row.id, month).first();
+            if (usageRow) {
+                carriedUsage = usageRow.verify_count || 0;
+                carriedBytes = usageRow.bytes_total || 0;
+            }
+        } catch (e) {
+            console.error('rotation usage carry read failed:', e);
+            return problem(500, 'internal_error', { detail: 'usage store unavailable' });
+        }
     }
     const statements = [
         c.env.DB.prepare(
@@ -192,9 +224,6 @@ export async function rotateKeyHandler(c) {
         c.env.DB.prepare('UPDATE keys SET revoked_at = ?, stripe_customer_id = NULL, stripe_subscription_id = NULL WHERE id = ? AND revoked_at IS NULL').bind(now, row.id),
     ];
     if (carriedUsage > 0) {
-        const usageRowPrev = await c.env.DB.prepare(
-            'SELECT bytes_total FROM usage WHERE key_id = ? AND month = ?'
-        ).bind(row.id, month).first();
         statements.push(c.env.DB.prepare(
             `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at)
              VALUES (?, ?, ?, ?, ?)
@@ -202,7 +231,7 @@ export async function rotateKeyHandler(c) {
                verify_count = MAX(verify_count, excluded.verify_count),
                bytes_total  = bytes_total + excluded.bytes_total,
                updated_at   = excluded.updated_at`
-        ).bind(id, month, carriedUsage, (usageRowPrev && usageRowPrev.bytes_total) || 0, now));
+        ).bind(id, month, carriedUsage, carriedBytes, now));
     }
     try {
         const results = await c.env.DB.batch(statements);

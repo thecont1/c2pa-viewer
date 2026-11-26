@@ -37,6 +37,7 @@ pub struct ParsedExif {
 struct TiffParser<'a> {
     data: &'a [u8],
     little: bool,
+    decoded_spent: std::cell::Cell<usize>,
 }
 
 impl<'a> TiffParser<'a> {
@@ -73,6 +74,18 @@ impl<'a> TiffParser<'a> {
 
     /// Read one IFD entry value as a revived JSON value.
     fn entry_value(&self, ttype: u32, count: u32, value_off: usize) -> Option<Value> {
+        // Cumulative decode budget: every expanded element costs heap far
+        // beyond its file extent, and adversarial IFD entries can overlap —
+        // many entries pointing at one large region multiply the expansion.
+        // Legitimate non-overlapping extents never decode more elements than
+        // the input has bytes (each element occupies at least one), so the
+        // input length is the natural budget rather than an arbitrary cap.
+        let cost = count as usize;
+        let spent = self.decoded_spent.get() + cost;
+        if spent > self.data.len() {
+            return None;
+        }
+        self.decoded_spent.set(spent);
         let unit = Self::type_size(ttype);
         let total = unit * count as usize;
         // Value bytes: inline (<=4) or at the pointed offset.
@@ -90,8 +103,17 @@ impl<'a> TiffParser<'a> {
         // was discarded entirely.
         if ttype == 2 {
             let raw = &self.data[base..base + total];
-            let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
-            let s = raw[..end].iter().map(|&c| if c == 0 { '\0' } else { c as char }).collect::<String>();
+            // ASCII fields are NUL-terminated; some tags (Copyright per the
+            // TIFF spec) carry TWO notices — photographer and editor —
+            // NUL-separated. Truncating at the first NUL silently drops the
+            // editor notice. Strip only trailing terminator(s) and keep any
+            // interior separation intact; a single-notice field decodes
+            // exactly as before.
+            let mut end = raw.len();
+            while end > 0 && raw[end - 1] == 0 {
+                end -= 1;
+            }
+            let s = raw[..end].iter().map(|&c| c as char).collect::<String>();
             return Some(Value::String(s));
         }
         if ttype == 7 {
@@ -233,7 +255,7 @@ fn parse_tiff(data: &[u8], parsed: &mut ParsedExif) {
         b"MM" => false,
         _ => return,
     };
-    let p = TiffParser { data, little };
+    let p = TiffParser { data, little, decoded_spent: std::cell::Cell::new(0) };
     let ifd0_off = p.u32(4) as usize;
     let mut ifd0: BTreeMap<u32, RawTag> = BTreeMap::new();
     collect_ifd(&p, ifd0_off, &mut ifd0);

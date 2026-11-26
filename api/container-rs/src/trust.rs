@@ -64,11 +64,11 @@ pub fn has_blocked_remote_url(bytes: &[u8]) -> bool {
 // (decimal, hex, octal) canonicalize to dotted-quad before evaluation.
 fn url_host(literal: &str) -> Option<String> {
     let parsed = url::Url::parse(literal).ok()?;
-    let host = parsed.host_str()?;
-    Some(match parsed.host() {
-        Some(url::Host::Ipv6(_)) => format!("[{host}]"),
-        _ => host.to_string(),
-    })
+    // host_str() already carries the bracketed form for IPv6 literals —
+    // wrapping it again produced [[::1]], which the bracket-strip in
+    // is_blocked_host cannot parse, failing closed on EVERY IPv6 literal
+    // including legitimate public ones.
+    Some(parsed.host_str()?.to_string())
 }
 
 /// Build the c2pa 0.92 wire settings JSON for one read.

@@ -22,7 +22,14 @@ async function api(path, { method = 'GET', key, body } = {}) {
     const headers = {};
     if (key) headers.authorization = `Bearer ${key}`;
     if (body) headers['content-type'] = 'application/json';
-    const resp = await fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    let resp;
+    try {
+        resp = await fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    } catch {
+        // Transport failure (offline, DNS, CORS preflight blocked) — distinct
+        // result so callers recover instead of dying on an unhandled rejection.
+        return { status: 0, json: null, transportError: true };
+    }
     let json = null;
     try { json = await resp.json(); } catch { }
     return { status: resp.status, json };
@@ -176,6 +183,13 @@ async function checkoutSuccessView(sessionId) {
     for (let attempt = 0; attempt < 20; attempt++) {
         const r = await api(`/v1/billing/reveal?session_id=${encodeURIComponent(sessionId)}`);
         if (r.status === 201) { keyRevealView(r.json); return; }
+        if (r.status === 422) {
+            // Upgrade checkout — the existing key's tier updates through the
+            // webhook; there is no new key to reveal. The key already stored
+            // in this browser carries the upgrade.
+            dashboardView();
+            return;
+        }
         if (r.status === 410) {
             document.getElementById('reveal-status').innerHTML = errorBox('This key was already revealed. If you lost it, rotate it from the dashboard of any copy you still hold — otherwise contact support.');
             return;
@@ -199,7 +213,11 @@ async function dashboardView() {
         api('/v1/usage', { key }),
         api('/v1/jobs?limit=20', { key }),
     ]);
-    if (gen !== sessionGen) return; // signed out while loading
+    // Stale-completion guard: the generation catches sign-out, but a credential
+    // CHANGE (rotation in another tab, re-signin) keeps the generation — the
+    // captured key itself must still be the active one, or this response
+    // belongs to a key the user no longer holds.
+    if (gen !== sessionGen || getKey() !== key) return;
     if (keyInfo.status !== 200) {
         // Only auth rejections invalidate the credential — transient 5xx or
         // network failures must not sign the user out.
@@ -208,7 +226,8 @@ async function dashboardView() {
             welcomeView();
         } else {
             render(errorBox('The API is temporarily unavailable — your key is still saved. Retry in a moment.') +
-                '<button class="btn" onclick="location.reload()">Retry</button>');
+                '<button class="btn" id="dash-retry-btn">Retry</button>');
+            document.getElementById('dash-retry-btn').onclick = () => location.reload();
         }
         return;
     }
@@ -317,8 +336,13 @@ function rotateFlow(key) {
 
 function revokeFlow(key) {
     if (!confirm('Revoke this key permanently? This cannot be undone.')) return;
+    const gen = sessionGen;
     (async () => {
         const r = await api('/v1/key/revoke', { method: 'POST', key });
+        // Only the session that initiated the revocation may mutate local
+        // state — a sign-out or credential change in between means this
+        // completion belongs to a session that no longer exists.
+        if (gen !== sessionGen || getKey() !== key) return;
         // Clearing the local copy while the server-side key is still live
         // strands it — active but unrecoverable. Only drop it once the
         // revocation is confirmed (or the key was already invalid).

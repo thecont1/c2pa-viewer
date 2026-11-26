@@ -143,14 +143,10 @@ pub fn build_exif_entry(bytes: &[u8], mime: &str, filename: &str, content_type: 
 
     let file_size_mb = ((bytes.len() as f64 / (1024.0 * 1024.0)) * 100.0).round() / 100.0;
 
-    // photography formatting reads the exif map + color profile
-    let mut entry_probe = Map::new();
-    entry_probe.insert("exif".into(), Value::Object(exif_map.clone()));
-    entry_probe.insert(
-        "color_profile".into(),
-        parsed.icc_description.clone().map(|s| json!(s)).unwrap_or(Value::Null),
-    );
-    let photography = format_photography_metadata(&entry_probe, &iptc_out);
+    // photography formatting borrows the exif map + color profile — the
+    // entry-shaped probe map used to clone the entire exif map for nothing.
+    let color_profile_value = parsed.icc_description.clone().map(|s| json!(s)).unwrap_or(Value::Null);
+    let photography = format_photography_metadata(&exif_map, &color_profile_value, &iptc_out);
 
     let _ = mime;
     let mut entry = Map::new();

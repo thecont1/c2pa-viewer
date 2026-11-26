@@ -46,6 +46,26 @@ fn source_type_result(value: &Value) -> Option<(String, String)> {
     Some((code, label))
 }
 
+// Declared digitalSourceType lookup for assertion data. The flat c2pa form
+// is `digitalSourceType`; XMP-serialized IPTC extension metadata carries the
+// same field namespaced as `Iptc4xmpExt:DigitalSourceType`. The exact flat
+// key wins when both are present; otherwise the first key whose local name
+// (after an optional `ns:` prefix) case-insensitively matches is honored.
+fn declared_source_type<'a>(data: &'a Value) -> Option<&'a Value> {
+    if let Some(dst) = data.get("digitalSourceType") {
+        return Some(dst);
+    }
+    let obj = data.as_object()?;
+    for (key, value) in obj {
+        let lower = key.to_lowercase();
+        let local = lower.rsplit(':').next().unwrap_or("");
+        if local == "digitalsourcetype" {
+            return Some(value);
+        }
+    }
+    None
+}
+
 const AI_TOOLS: [&str; 7] = [
     "firefly", "dall-e", "dalle", "midjourney", "stable diffusion",
     "generative fill", "generative remove",
@@ -144,27 +164,36 @@ pub fn get_digital_source_type(c2pa_data: &Value) -> (Option<String>, Option<Str
             let data = assertion.get("data").unwrap_or(&Value::Null);
             let label_lower = label.to_lowercase();
             if label_lower.contains("iptc") || label_lower.contains("photo-metadata") || label.contains("CreativeWork") {
-                if let Some(dst) = data.get("digitalSourceType") {
+                if let Some(dst) = declared_source_type(data) {
                     if let Some(hit) = source_type_result(dst) {
                         return (Some(hit.0), Some(hit.1));
                     }
                 }
             }
-            if label_lower.contains("actions") {
-                let actions = data.get("actions").and_then(|v| v.as_array());
-                if let Some(hit) = scan_explicit_source_type(actions) {
-                    return (Some(hit.0), Some(hit.1));
-                }
-            }
         }
-        for assertion in assertions {
-            let label = assertion.get("label").and_then(|v| v.as_str()).unwrap_or("");
+        // The same selected Actions assertion backs both scans — the one the
+        // response itself reports: c2pa.actions.v2 supersedes v1, which is
+        // consulted only when no v2 exists. Scanning every actions-ish
+        // assertion in array order could convict or clear based on a v1
+        // assertion the response does not even surface.
+        fn assertion_label(a: &Value) -> &str {
+            a.get("label").and_then(|v| v.as_str()).unwrap_or("")
+        }
+        let label_of = assertion_label;
+        let selected = assertions
+            .iter()
+            .find(|a| label_of(a) == "c2pa.actions.v2")
+            .or_else(|| assertions.iter().find(|a| label_of(a) == "c2pa.actions"));
+        if let Some(assertion) = selected {
             let data = assertion.get("data").unwrap_or(&Value::Null);
-            if label.to_lowercase().contains("actions") {
-                let actions = data.get("actions").and_then(|v| v.as_array());
-                if let Some(hit) = scan_actions(actions) {
-                    return (Some(hit.0), Some(hit.1));
-                }
+            let actions = data.get("actions").and_then(|v| v.as_array());
+            if let Some(hit) = scan_explicit_source_type(actions) {
+                return (Some(hit.0), Some(hit.1));
+            }
+            // Declaration passes are exhausted — heuristic scan of the same
+            // selected assertion only.
+            if let Some(hit) = scan_actions(actions) {
+                return (Some(hit.0), Some(hit.1));
             }
         }
     }

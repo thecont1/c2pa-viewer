@@ -190,8 +190,15 @@ export async function revealHandler(c) {
     let billingStatus = 'active';
     try {
         const sub = await stripe(c.env, 'GET', `/subscriptions/${encodeURIComponent(session.subscription)}`);
-        if (sub && (sub.status === 'canceled' || sub.status === 'incomplete_expired' || sub.status === 'unpaid')) {
+        if (sub && (sub.status === 'canceled' || sub.status === 'incomplete_expired')) {
+            // Terminal: no entitlement beyond free, no restoration path.
             billingStatus = 'canceled';
+        } else if (sub && sub.status === 'unpaid') {
+            // unpaid is NOT terminal: Stripe restores the subscription when
+            // the customer settles. Provision free-tier for now — the
+            // subscription.updated webhook restores the paid tier because
+            // only 'canceled' rows are terminal-skipped there.
+            billingStatus = 'unpaid';
         } else if (sub && sub.status === 'past_due') {
             billingStatus = 'past_due';
         }
@@ -205,7 +212,7 @@ export async function revealHandler(c) {
     const id = crypto.randomUUID();
     const now = nowIso();
     try {
-        const effectiveTier = billingStatus === 'canceled' ? 'free' : tier;
+        const effectiveTier = (billingStatus === 'canceled' || billingStatus === 'unpaid') ? 'free' : tier;
         await c.env.DB.prepare(
             `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, created_at,
                                stripe_customer_id, stripe_subscription_id, billing_status, checkout_session_id, checkout_revealed_at)
@@ -224,8 +231,8 @@ export async function revealHandler(c) {
     return Response.json({
         key: plaintext,
         display_prefix: displayPrefix,
-        tier: billingStatus === 'canceled' ? 'free' : tier,
-        quota_monthly: TIER_QUOTAS[billingStatus === 'canceled' ? 'free' : tier],
+        tier: (billingStatus === 'canceled' || billingStatus === 'unpaid') ? 'free' : tier,
+        quota_monthly: TIER_QUOTAS[(billingStatus === 'canceled' || billingStatus === 'unpaid') ? 'free' : tier],
         created_at: now,
         notice: 'Store this key now — it is shown exactly once and cannot be recovered.',
     }, { status: 201 });
@@ -327,14 +334,20 @@ export async function webhookHandler(c) {
                 const priceId = obj.items && obj.items.data && obj.items.data[0] && obj.items.data[0].price && obj.items.data[0].price.id;
                 const tier = priceId ? tierForPrice(c.env, priceId) : null;
                 if (!tier) break;
-                const status = obj.status === 'active' ? 'active' : obj.status === 'past_due' ? 'past_due' : 'active';
+                // unpaid is stored distinctly from canceled: it carries free
+                // entitlement only, but a later active event restores the
+                // paid tier because the row is not terminal-skipped.
+                const status = obj.status === 'active' ? 'active'
+                    : obj.status === 'past_due' ? 'past_due'
+                    : obj.status === 'unpaid' ? 'unpaid' : 'active';
+                const effectiveTier = status === 'unpaid' ? 'free' : tier;
                 // Stripe does not guarantee event ordering — an older
                 // subscription.updated arriving after subscription.deleted
                 // would resurrect the paid tier. Skip rows already terminally
                 // canceled for this subscription.
                 await c.env.DB.prepare(
                     `UPDATE keys SET tier = ?, quota_monthly = ?, billing_status = ? WHERE stripe_subscription_id = ? AND billing_status != 'canceled'`
-                ).bind(tier, TIER_QUOTAS[tier], status, obj.id).run();
+                ).bind(effectiveTier, TIER_QUOTAS[effectiveTier], status, obj.id).run();
                 break;
             }
             case 'customer.subscription.deleted': {
