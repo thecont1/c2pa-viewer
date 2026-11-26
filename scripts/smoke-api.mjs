@@ -187,6 +187,7 @@ async function main() {
     const browser = keyctl(['create', '--name', 'smoke-browser', '--type', 'browser', '--tier', 'free', '--origins', 'https://embed.example.com']);
     const test = keyctl(['create', '--name', 'smoke-test', '--type', 'server', '--tier', 'free', '--test']);
     const quota = keyctl(['create', '--name', 'smoke-quota', '--type', 'server', '--tier', 'free']);
+    const rotation = keyctl(['create', '--name', 'smoke-rotation', '--type', 'server', '--tier', 'free', '--quota', '100']);
     const revoked = keyctl(['create', '--name', 'smoke-revoked', '--type', 'server', '--tier', 'free']);
     spawnSync('bun', ['scripts/keyctl.mjs', 'revoke', '--id', revoked.id], { cwd: ROOT, encoding: 'utf8' });
 
@@ -479,6 +480,51 @@ async function main() {
             row('quota: next verify → 429 quota_exceeded (polled until write landed)',
                 converged && r2 && problemShape(r2.json, 'quota_exceeded'),
                 `converged=${converged} status=${r2 && r2.status} code=${r2 && r2.json && r2.json.code}`);
+        }
+
+        // -- 8b. rotation carries usage to the successor -------------------
+        {
+            // One committed verification on the predecessor, then rotate:
+            // finalize seeding must carry the count into the successor's
+            // ledger row, the predecessor must die immediately, and the
+            // successor's own verification must land on top of the carry.
+            const rv = await req('POST', `${BASE_A}/v1/verify`, {
+                key: rotation.key,
+                form: multipart(C, 'C.jpg', 'image/jpeg'),
+            });
+            row('rotation: predecessor verify → 200', rv.status === 200, `status=${rv.status}`);
+
+            // Let the off-path ledger write land before rotating.
+            await sleep(1500);
+            const rot = await req('POST', `${BASE_A}/v1/key/rotate`, { key: rotation.key, method: 'POST' });
+            const successor = rot.json && rot.json.key;
+            row('rotation: rotate → 200 with successor key',
+                (rot.status === 200 || rot.status === 201) && typeof successor === 'string' && successor.startsWith('c2pa_live_'),
+                `status=${rot.status} prefix=${rot.json && rot.json.display_prefix}`);
+
+            const dead = await req('GET', `${BASE_A}/v1/usage`, { key: rotation.key });
+            row('rotation: predecessor key rejected after rotation',
+                dead.status === 401 || dead.status === 403, `status=${dead.status}`);
+
+            if (successor) {
+                const sv = await req('POST', `${BASE_A}/v1/verify`, {
+                    key: successor,
+                    form: multipart(C, 'C.jpg', 'image/jpeg'),
+                });
+                row('rotation: successor verify → 200', sv.status === 200, `status=${sv.status}`);
+                // Poll usage until the successor's commit lands: carried 1 + own 1 = 2.
+                let count = 0;
+                const deadline = Date.now() + 10000;
+                while (Date.now() < deadline) {
+                    const u = await req('GET', `${BASE_A}/v1/usage`, { key: successor });
+                    const months = (u.json && u.json.months) || [];
+                    count = months[0] ? months[0].verify_count : 0;
+                    if (count >= 2) break;
+                    await sleep(400);
+                }
+                row('rotation: successor usage = carried 1 + own 1',
+                    count === 2, `verify_count=${count}`);
+            }
         }
 
         // -- 9. mini golden shape -------------------------------------------
