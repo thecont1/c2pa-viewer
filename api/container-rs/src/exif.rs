@@ -84,6 +84,33 @@ impl<'a> TiffParser<'a> {
         if base + total > self.data.len() {
             return None;
         }
+        // ASCII and UNDEFINED decode straight from the byte extent — building
+        // one serde_json::Value per element first is pure heap amplification
+        // (a hostile count can reach the asset size), and for ASCII the vector
+        // was discarded entirely.
+        if ttype == 2 {
+            let raw = &self.data[base..base + total];
+            let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
+            let s = raw[..end].iter().map(|&c| if c == 0 { '\0' } else { c as char }).collect::<String>();
+            return Some(Value::String(s));
+        }
+        if ttype == 7 {
+            // UNDEFINED — exifr returns a Uint8Array; for UserComment the
+            // caller handles decoding. Return bytes as array of numbers.
+            // Cap the expansion: per-element Values amplify heap well beyond
+            // the input extent, and no genuine EXIF blob approaches this.
+            const MAX_EXPANDED: usize = 100_000;
+            if count as usize > MAX_EXPANDED {
+                return None;
+            }
+            let raw = &self.data[base..base + total];
+            return Some(Value::Array(raw.iter().map(|&b| Value::from(b as u64)).collect()));
+        }
+        // Same amplification guard for the numeric vector path.
+        const MAX_EXPANDED: usize = 100_000;
+        if count as usize > MAX_EXPANDED {
+            return None;
+        }
         let vals: Vec<Value> = (0..count as usize)
             .map(|i| {
                 let o = base + i * unit;
@@ -132,27 +159,10 @@ impl<'a> TiffParser<'a> {
                 }
             })
             .collect();
-        match ttype {
-            2 => {
-                // ASCII — joined with NUL separators stripped per string
-                let raw = &self.data[base..base + total];
-                let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
-                let s = raw[..end].iter().map(|&c| if c == 0 { '\0' } else { c as char }).collect::<String>();
-                Some(Value::String(s))
-            }
-            7 => {
-                // UNDEFINED — exifr returns a Uint8Array; for UserComment the
-                // caller handles decoding. Return bytes as array of numbers.
-                let raw = &self.data[base..base + total];
-                Some(Value::Array(raw.iter().map(|&b| Value::from(b as u64)).collect()))
-            }
-            _ => {
-                if count == 1 {
-                    vals.into_iter().next()
-                } else {
-                    Some(Value::Array(vals))
-                }
-            }
+        if count == 1 {
+            vals.into_iter().next()
+        } else {
+            Some(Value::Array(vals))
         }
     }
 

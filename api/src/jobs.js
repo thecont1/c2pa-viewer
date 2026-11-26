@@ -7,7 +7,7 @@ import { ApiError, problem, buildProblemPayload } from './errors.js';
 import { parseInclude, parseTrust, parseStripGps, apiErrorResponse, displayNameFromUrl } from './verify.js';
 import { validateAssetUrl } from './urlfetch.js';
 import { isBlockedHost } from '../../packages/core/src/ssrf.js';
-import { chargeQuota } from './quota.js';
+import { chargeQuota, reserveQuota, commitQuota, releaseQuota, quotaLimited } from './quota.js';
 
 export const MAX_JOB_BYTES = 1024 * 1024 * 1024; // 1 GiB
 export const JOB_BUCKET = 'c2pa-verify-jobs';
@@ -183,16 +183,20 @@ export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey
     // in middleware: a replayed creation must recover the original job even
     // when the key has since reached its quota. New submissions still cannot
     // start once the quota is exhausted.
-    let charged = true;
+    // Reserve rather than charge up front: the charge finalizes only when the
+    // job row exists. A failed insert releases the reservation, so a retry
+    // after a transient D1 error is never blocked by an orphaned charge; a
+    // concurrent idempotent replay releases rather than double-charging.
+    let reservation = { token: null };
     if (keyKind !== 'test') {
         try {
-            charged = await chargeQuota(env, keyRow, 0);
+            reservation = await reserveQuota(env, keyRow);
         } catch (e) {
-            console.error('quota charge failed:', e);
+            console.error('quota reserve failed:', e);
             throw new ApiError('internal', 'Usage store unavailable.');
         }
+        if (!reservation) throw new ApiError('quota', `Monthly quota of ${keyRow.quota_monthly} verifications exhausted.`);
     }
-    if (!charged) throw new ApiError('quota', `Monthly quota of ${keyRow.quota_monthly} verifications exhausted.`);
 
     const jobId = `job_${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
     const objectKey = `uploads/${jobId}`;
@@ -219,11 +223,15 @@ export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey
         if (idem) {
             const existing = await jobRowByIdempotency(env.DB, keyRow.id, idem);
             if (existing) {
+                await releaseQuota(env, keyRow, reservation.token);
                 return { statusCode: 200, payload: await jobCreatedPayload(env, existing), row: existing, idempotentReplay: true };
             }
         }
+        await releaseQuota(env, keyRow, reservation.token);
         throw e;
     }
+    // The job exists — finalize the charge exactly once.
+    await commitQuota(env, keyRow, reservation.token, 0);
 
     row = await getJobRow(env.DB, jobId);
     if (input.url) {

@@ -4,6 +4,7 @@ use serde_json::json;
 
 use crate::ssrf::is_blocked_host;
 
+#[derive(Clone)]
 pub struct Anchors {
     pub c2pa: String,
     pub itl: String,
@@ -46,6 +47,8 @@ pub fn has_blocked_remote_url(bytes: &[u8]) -> bool {
                         }
                     }
                 }
+                // urls with unparseable/empty hosts are ignored — the scanner is
+                // a pre-filter over raw bytes, not the fetch decision itself
                 i = end;
                 continue;
             }
@@ -55,17 +58,17 @@ pub fn has_blocked_remote_url(bytes: &[u8]) -> bool {
     false
 }
 
-// Minimal host extraction for a URL literal — enough for the SSRF check.
+// Host extraction for a URL literal via the WHATWG parser — normalization
+// matters for the SSRF check: percent-encoded octets are decoded, backslashes
+// collapse to slashes, userinfo is separated correctly, and exotic IPv4 forms
+// (decimal, hex, octal) canonicalize to dotted-quad before evaluation.
 fn url_host(literal: &str) -> Option<String> {
-    let after_scheme = literal.split("://").nth(1)?;
-    let authority = after_scheme.split(&['/', '?', '#'][..]).next()?;
-    // strip userinfo and port (IPv6 literals keep brackets)
-    let hostport = authority.rsplit('@').next()?;
-    if hostport.starts_with('[') {
-        let end = hostport.find(']')? + 1;
-        return Some(hostport[..end].to_string());
-    }
-    Some(hostport.split(':').next()?.to_string())
+    let parsed = url::Url::parse(literal).ok()?;
+    let host = parsed.host_str()?;
+    Some(match parsed.host() {
+        Some(url::Host::Ipv6(_)) => format!("[{host}]"),
+        _ => host.to_string(),
+    })
 }
 
 /// Build the c2pa 0.92 wire settings JSON for one read.

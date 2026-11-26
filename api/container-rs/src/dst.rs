@@ -76,11 +76,27 @@ fn scan_explicit_source_type(actions: Option<&Vec<Value>>) -> Option<(String, St
     None
 }
 
+// `ai` is evidence only as a complete token — substring matching convicts
+// unrelated words ("thumbnailWidth", "detail", "repair") of being AI markers.
+fn contains_ai_token(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    for i in 0..bytes.len().saturating_sub(1) {
+        if bytes[i] == b'a' && bytes[i + 1] == b'i' {
+            let before_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
+            let after_ok = i + 2 >= bytes.len() || !bytes[i + 2].is_ascii_alphanumeric();
+            if before_ok && after_ok {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn scan_actions(actions: Option<&Vec<Value>>) -> Option<(String, String)> {
     for action in actions? {
         let action_name = action.get("action").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
         let software_agent = agent_name(action.get("softwareAgent").unwrap_or(&Value::Null)).to_lowercase();
-        if action_name.contains("generative") || action_name.contains("ai") {
+        if action_name.contains("generative") || contains_ai_token(&action_name) {
             return generative_hit();
         }
         let mut ai_all = AI_TOOLS.to_vec();
@@ -95,7 +111,7 @@ fn scan_actions(actions: Option<&Vec<Value>>) -> Option<(String, String)> {
                     Value::String(s) => s.to_lowercase(),
                     other => other.to_string().to_lowercase(),
                 };
-                if ["firefly", "generative", "ai", "text_to_image"].iter().any(|kw| key_lower.contains(kw)) {
+                if ["firefly", "generative", "text_to_image"].iter().any(|kw| key_lower.contains(kw)) || contains_ai_token(&key_lower) {
                     return generative_hit();
                 }
                 if ["text_to_image", "generative", "firefly"].iter().any(|kw| value_lower.contains(kw)) {
@@ -118,26 +134,16 @@ pub fn get_digital_source_type(c2pa_data: &Value) -> (Option<String>, Option<Str
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_lowercase();
-    let mut ai_all = AI_TOOLS.to_vec();
-    ai_all.push("generative");
-    if ai_all.iter().any(|t| claim_generator.contains(t)) {
-        let hit = generative_hit().unwrap();
-        return (Some(hit.0), Some(hit.1));
-    }
-
+    // Declared source types win over every heuristic: the signer states what
+    // the media is, and a generator with an AI-flavored name must not override
+    // an explicit digitalCapture declaration. Two passes — declarations first,
+    // action/parameter heuristics only when nothing is declared.
     if let Some(Value::Array(assertions)) = c2pa_data.get("assertions") {
         for assertion in assertions {
             let label = assertion.get("label").and_then(|v| v.as_str()).unwrap_or("");
             let data = assertion.get("data").unwrap_or(&Value::Null);
             let label_lower = label.to_lowercase();
-            if label_lower.contains("iptc") || label_lower.contains("photo-metadata") {
-                if let Some(dst) = data.get("digitalSourceType") {
-                    if let Some(hit) = source_type_result(dst) {
-                        return (Some(hit.0), Some(hit.1));
-                    }
-                }
-            }
-            if label.contains("CreativeWork") {
+            if label_lower.contains("iptc") || label_lower.contains("photo-metadata") || label.contains("CreativeWork") {
                 if let Some(dst) = data.get("digitalSourceType") {
                     if let Some(hit) = source_type_result(dst) {
                         return (Some(hit.0), Some(hit.1));
@@ -149,11 +155,25 @@ pub fn get_digital_source_type(c2pa_data: &Value) -> (Option<String>, Option<Str
                 if let Some(hit) = scan_explicit_source_type(actions) {
                     return (Some(hit.0), Some(hit.1));
                 }
+            }
+        }
+        for assertion in assertions {
+            let label = assertion.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            let data = assertion.get("data").unwrap_or(&Value::Null);
+            if label.to_lowercase().contains("actions") {
+                let actions = data.get("actions").and_then(|v| v.as_array());
                 if let Some(hit) = scan_actions(actions) {
                     return (Some(hit.0), Some(hit.1));
                 }
             }
         }
+    }
+
+    let mut ai_all = AI_TOOLS.to_vec();
+    ai_all.push("generative");
+    if ai_all.iter().any(|t| claim_generator.contains(t)) {
+        let hit = generative_hit().unwrap();
+        return (Some(hit.0), Some(hit.1));
     }
 
     let legacy_actions = c2pa_data.get("actions").and_then(|v| v.as_array());

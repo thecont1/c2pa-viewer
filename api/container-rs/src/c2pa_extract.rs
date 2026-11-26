@@ -33,7 +33,9 @@ pub async fn engine_read(bytes: &[u8], mime: &str, settings_json: &str) -> Resul
         .await;
     match result {
         Ok(reader) => {
-            let store_json = reader.json();
+            // json() silently degrades to "{}" when conversion fails, which is
+            // indistinguishable from an unsigned asset — json_checked surfaces it.
+            let store_json = reader.json_checked().map_err(|e| format!("store json conversion: {e}"))?;
             let store: Value = serde_json::from_str(&store_json).map_err(|e| format!("store json parse: {e}"))?;
             let count = store.get("manifests").and_then(|m| m.as_object()).map(|o| o.len()).unwrap_or(0);
             if count == 0 {

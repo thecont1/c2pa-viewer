@@ -101,79 +101,76 @@ async fn verify(req: Request) -> Response {
         return err(StatusCode::PAYLOAD_TOO_LARGE, "asset exceeds the 1 GiB asynchronous verification cap");
     }
 
-    // Ephemeral-disk spool first (streaming, counted), then one in-memory read.
-    let tmp = format!("/tmp/c2pa-asset-{}", uuid::Uuid::new_v4());
-    let mut file = match std::fs::File::create(&tmp) {
-        Ok(f) => f,
-        Err(_) => return err(StatusCode::INTERNAL_SERVER_ERROR, "temporary file spool failed"),
-    };
-    let mut size: usize = 0;
-    let mut oversized = false;
-    let mut spool_failed = false;
-
+    // Stream the body straight into memory with the cap enforced per frame.
+    // The analysis pipeline needs the full asset regardless, so the earlier
+    // ephemeral-disk spool bought nothing: it cost blocking file IO on the
+    // worker thread and leaked the temp file whenever the request future was
+    // dropped mid-upload.
     use http_body_util::BodyExt;
     let mut body = req.into_body();
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut oversized = false;
+    let mut spool_failed = false;
     loop {
         match body.frame().await {
             Some(Ok(frame)) => {
                 if let Some(data) = frame.data_ref() {
-                    size += data.len();
-                    if size > MAX_BYTES {
+                    if bytes.len() + data.len() > MAX_BYTES {
                         oversized = true;
                         break;
                     }
-                    if file.write_all(data).is_err() {
-                        spool_failed = true;
-                        break;
-                    }
+                    bytes.extend_from_slice(data);
                 }
             }
-            Some(Err(_) ) => {
+            Some(Err(_)) => {
                 spool_failed = true;
                 break;
             }
             None => break,
         }
     }
-    drop(file);
 
     if oversized {
-        let _ = std::fs::remove_file(&tmp);
         return err(StatusCode::PAYLOAD_TOO_LARGE, "asset exceeds the 1 GiB asynchronous verification cap");
     }
     if spool_failed {
-        let _ = std::fs::remove_file(&tmp);
-        return err(StatusCode::INTERNAL_SERVER_ERROR, "temporary file spool failed");
+        return err(StatusCode::INTERNAL_SERVER_ERROR, "asset body read failed");
     }
-    if size == 0 {
-        let _ = std::fs::remove_file(&tmp);
+    if bytes.is_empty() {
         return err(StatusCode::UNPROCESSABLE_ENTITY, "asset is empty");
     }
 
-    let bytes = match std::fs::read(&tmp) {
-        Ok(b) => b,
-        Err(_) => {
-            let _ = std::fs::remove_file(&tmp);
-            return err(StatusCode::INTERNAL_SERVER_ERROR, "temporary file read failed");
-        }
-    };
-    let _ = std::fs::remove_file(&tmp);
-
-    let args = AnalyzeArgs {
-        bytes: &bytes,
-        mime: &mime,
-        filename: &filename,
-        content_type: &mime,
-        anchors: &anchors,
-        trust_profile: &trust_profile,
-    };
-
-    let result = tokio::time::timeout(ANALYZE_TIMEOUT, analyze(&args)).await;
+    // The analysis is CPU-bound synchronous work inside an async shell, so a
+    // plain timeout cannot cancel it — the future never yields at an .await.
+    // Run it on the blocking thread pool with its own current-thread runtime:
+    // the timeout then returns on schedule even when parsing spins, and the
+    // main runtime's worker threads stay free for the health endpoint.
+    let result = tokio::time::timeout(ANALYZE_TIMEOUT, tokio::task::spawn_blocking(move || {
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(_) => return Err("analysis runtime construction failed".to_string()),
+        };
+        rt.block_on(async move {
+            let args = AnalyzeArgs {
+                bytes: &bytes,
+                mime: &mime,
+                filename: &filename,
+                content_type: &mime,
+                anchors: &anchors,
+                trust_profile: &trust_profile,
+            };
+            analyze(&args).await
+        })
+    })).await;
     match result {
-        Ok(Ok(analysis)) => json_response(StatusCode::OK, analysis),
-        Ok(Err(msg)) => {
+        Ok(Ok(Ok(analysis))) => json_response(StatusCode::OK, analysis),
+        Ok(Ok(Err(msg))) => {
             eprintln!("verify failed: {msg}");
             err(StatusCode::UNPROCESSABLE_ENTITY, "the asset could not be read — corrupt or unparseable input")
+        }
+        Ok(Err(join_err)) => {
+            eprintln!("analysis task join failure: {join_err}");
+            err(StatusCode::INTERNAL_SERVER_ERROR, "analysis task failed")
         }
         Err(_) => err(StatusCode::INTERNAL_SERVER_ERROR, "analysis timed out"),
     }

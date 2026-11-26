@@ -34,46 +34,105 @@ function nowIso() { return new Date().toISOString(); }
 
 export class QuotaCounter extends DurableObject {
     async loadState(keyId, month) {
+        // DO async interleaving race: two concurrent first-touch ops can both
+        // observe missing state and each write a fresh object, the second
+        // clobbering the first's reservations. Cache the loaded object — one
+        // shared reference means mutations are visible to every interleaved op
+        // — and serialize the storage read itself through a promise guard.
+        if (this._stateCache && this._stateCache.month === month) {
+            return this._prune(this._stateCache);
+        }
+        if (!this._stateLoad) {
+            this._stateLoad = this._loadStateInner(keyId, month)
+                .finally(() => { this._stateLoad = null; });
+        }
+        return this._stateLoad;
+    }
+
+    async _loadStateInner(keyId, month) {
         let state = await this.ctx.storage.get(STATE_KEY);
         if (!state || state.month !== month) {
             // Lazy rollover / first touch. Seed from the D1 ledger so usage
             // written before the DO existed (or by any legacy path) is
             // honored exactly once.
-            let consumed = 0;
-            try {
-                const row = await this.env.DB.prepare(
-                    'SELECT verify_count FROM usage WHERE key_id = ? AND month = ?'
-                ).bind(keyId, month).first();
-                consumed = row ? row.verify_count : 0;
-            } catch (e) {
-                console.error('quota seed read failed:', e);
-                // Fail closed toward the customer: unknown prior usage is
-                // treated as zero rather than blocking service.
-            }
-            state = { month, consumed, reserved: {} };
+            // Seed failure must NOT persist consumed=0: one transient D1 error
+            // would permanently zero the month and hand out the quota again.
+            // Propagate instead — state stays uninitialized and the next op
+            // retries the seed.
+            const row = await this.env.DB.prepare(
+                'SELECT verify_count FROM usage WHERE key_id = ? AND month = ?'
+            ).bind(keyId, month).first();
+            const consumed = row ? row.verify_count : 0;
+            // Rollover carries pending reservations forward: they self-expire
+            // within RESERVE_TTL_MS, and dropping them would lose the proof a
+            // commit needs when a verification straddles midnight UTC.
+            const carry = state && state.reserved ? { ...state.reserved } : {};
+            state = { month, consumed, reserved: carry };
             await this.ctx.storage.put(STATE_KEY, state);
         }
+        this._stateCache = state;
+        return this._prune(state);
+    }
+
+    async _prune(state) {
         // Prune expired reservations.
         const now = Date.now();
         let dirty = false;
-        for (const [token, exp] of Object.entries(state.reserved)) {
+        for (const [token, entry] of Object.entries(state.reserved)) {
+            const exp = typeof entry === 'number' ? entry : entry.exp;
             if (exp <= now) { delete state.reserved[token]; dirty = true; }
         }
-        if (dirty) await this.ctx.storage.put(STATE_KEY, state);
+        if (dirty) await this._put(state);
         return state;
     }
 
-    incrementD1(keyId, month, bytes) {
-        const now = nowIso();
-        return this.env.DB.prepare(
-            `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at)
-             VALUES (?, ?, 1, ?, ?)
-             ON CONFLICT (key_id, month) DO UPDATE SET
-               verify_count = verify_count + 1,
-               bytes_total  = bytes_total + excluded.bytes_total,
-               updated_at   = excluded.updated_at`
-        ).bind(keyId, month, bytes || 0, now).run()
-            .catch((e) => console.error('quota D1 ledger write failed:', e));
+    async _put(state) {
+        this._stateCache = state;
+        await this.ctx.storage.put(STATE_KEY, state);
+    }
+
+    // D1 ledger write with persistent retry. The DO is the only writer of
+    // usage.verify_count; a discarded failure strands the divergence forever
+    // because the reservation is already finalized. Failed entries persist in
+    // DO storage and flush on every subsequent op.
+    async incrementD1(keyId, month, bytes) {
+        const entry = { keyId, month, bytes: bytes || 0, id: crypto.randomUUID() };
+        await this._enqueueLedger(entry);
+        await this._flushLedger();
+    }
+
+    async _enqueueLedger(entry) {
+        const pending = (await this.ctx.storage.get('pendingLedger')) || [];
+        pending.push(entry);
+        await this.ctx.storage.put('pendingLedger', pending);
+    }
+
+    async _flushLedger() {
+        const pending = (await this.ctx.storage.get('pendingLedger')) || [];
+        if (!pending.length) return;
+        const remaining = [];
+        for (const entry of pending) {
+            try {
+                await this.env.DB.prepare(
+                    `INSERT INTO usage (key_id, month, verify_count, bytes_total, updated_at)
+                     VALUES (?, ?, 1, ?, ?)
+                     ON CONFLICT (key_id, month) DO UPDATE SET
+                       verify_count = verify_count + 1,
+                       bytes_total  = bytes_total + excluded.bytes_total,
+                       updated_at   = excluded.updated_at`
+                ).bind(entry.keyId, entry.month, entry.bytes, nowIso()).run();
+            } catch (e) {
+                console.error('quota D1 ledger write failed (will retry):', e);
+                remaining.push(entry);
+            }
+        }
+        if (remaining.length !== pending.length) {
+            await this.ctx.storage.put('pendingLedger', remaining);
+        }
+        if (remaining.length) {
+            // nothing further scheduled here — the next op flushes again; the
+            // entries cannot be lost because they live in DO storage
+        }
     }
 
     async fetch(request) {
@@ -87,6 +146,7 @@ export class QuotaCounter extends DurableObject {
         }
 
         const state = await this.loadState(keyId, month);
+        this.ctx.waitUntil(this._flushLedger().catch((e) => console.error('ledger flush error:', e)));
 
         switch (kind) {
             case 'reserve': {
@@ -97,8 +157,8 @@ export class QuotaCounter extends DurableObject {
                     return Response.json({ ok: false, consumed: state.consumed, active });
                 }
                 const token = crypto.randomUUID();
-                state.reserved[token] = Date.now() + RESERVE_TTL_MS;
-                await this.ctx.storage.put(STATE_KEY, state);
+                state.reserved[token] = { exp: Date.now() + RESERVE_TTL_MS, month: state.month };
+                await this._put(state);
                 return Response.json({ ok: true, token, consumed: state.consumed, active: active + 1 });
             }
 
@@ -108,10 +168,14 @@ export class QuotaCounter extends DurableObject {
                     // Already released/committed or expired — exactly-once.
                     return Response.json({ ok: true, transitioned: false });
                 }
+                const entry = state.reserved[token];
                 delete state.reserved[token];
                 state.consumed += 1;
-                await this.ctx.storage.put(STATE_KEY, state);
-                this.ctx.waitUntil(this.incrementD1(keyId, month, op.bytes));
+                await this._put(state);
+                // The ledger month is the reservation's own month — a commit
+                // straddling midnight UTC counts where the verification started.
+                const ledgerMonth = entry && typeof entry === 'object' && entry.month ? entry.month : month;
+                this.ctx.waitUntil(this.incrementD1(keyId, ledgerMonth, op.bytes));
                 return Response.json({ ok: true, transitioned: true, consumed: state.consumed });
             }
 
@@ -119,7 +183,7 @@ export class QuotaCounter extends DurableObject {
                 const token = op.token;
                 if (token && token in state.reserved) {
                     delete state.reserved[token];
-                    await this.ctx.storage.put(STATE_KEY, state);
+                    await this._put(state);
                     return Response.json({ ok: true, transitioned: true });
                 }
                 return Response.json({ ok: true, transitioned: false });
@@ -133,7 +197,7 @@ export class QuotaCounter extends DurableObject {
                     return Response.json({ ok: false, consumed: state.consumed, active });
                 }
                 state.consumed += 1;
-                await this.ctx.storage.put(STATE_KEY, state);
+                await this._put(state);
                 this.ctx.waitUntil(this.incrementD1(keyId, month, op.bytes));
                 return Response.json({ ok: true, consumed: state.consumed });
             }
