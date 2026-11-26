@@ -146,9 +146,9 @@ Decisions locked 2026-11-26:
 - **Free signup abuse control**: Cloudflare Turnstile + per-IP rate limit on the signup endpoint.
 
 Milestones:
-- [ ] P4.1 Per-key quota Durable Object: atomic reserve/commit/release with expiring reservation tokens (crash-safe), month rollover, D1 usage table remains the metering ledger; eliminates the check-then-increment race in the current D1-read quota path
-- [ ] P4.2 Self-service key backend: POST /v1/signup/free (Turnstile-verified), key-authed management endpoints (GET /v1/key, GET /v1/usage, POST /v1/key/rotate, POST /v1/key/revoke, GET /v1/jobs list), migration 0003 (stripe customer/subscription columns)
-- [ ] P4.3 Billing adapter + Stripe impl: POST /v1/billing/checkout (key-auth upgrade OR keyless new-customer flow), GET /v1/billing/checkout-session reveal-once, POST /v1/billing/portal, POST /v1/billing/webhook (signature-verified: checkout.session.completed → tier upgrade, subscription.deleted → downgrade to free), clean 503 when unconfigured
+- [x] P4.1 Per-key quota Durable Object: atomic reserve/commit/release with expiring reservation tokens (crash-safe), month rollover, D1 usage table remains the metering ledger; eliminates the check-then-increment race in the current D1-read quota path
+- [x] P4.2 Self-service key backend: POST /v1/signup/free (Turnstile-verified), key-authed management endpoints (GET /v1/key, GET /v1/usage, POST /v1/key/rotate, POST /v1/key/revoke, GET /v1/jobs list), migration 0003 (stripe customer/subscription columns)
+- [x] P4.3 Billing adapter + Stripe impl: POST /v1/billing/checkout (key-auth upgrade OR keyless new-customer flow), GET /v1/billing/checkout-session reveal-once, POST /v1/billing/portal, POST /v1/billing/webhook (signature-verified: checkout.session.completed → tier upgrade, subscription.deleted → downgrade to free), clean 503 when unconfigured
 - [ ] P4.4 Customer dashboard in the Pages viewer: key-auth, usage/quota meters, jobs list, rotate/revoke, upgrade flow, signup flow with Turnstile
 - [ ] P4.5 Docs site in the Pages viewer (/docs: quickstart, auth, sync, async, webhooks, MCP, trust, errors, quotas) + thin TypeScript and Python SDKs
 - [ ] P4.6 Terms of service, DPA, retention statement (accurate to actual R2/D1 retention)

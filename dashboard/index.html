@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Dashboard — C2PA Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/dashboard/dashboard.css">
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+</head>
+<body>
+<header class="dash-header">
+  <a class="dash-brand" href="/">C2PA Viewer <span class="dash-brand-sub">API Dashboard</span></a>
+  <nav class="dash-nav">
+    <a href="/docs">Docs</a>
+    <a href="/">Viewer</a>
+    <button id="nav-signout" class="btn btn-quiet" hidden>Sign out</button>
+  </nav>
+</header>
+
+<main id="app" class="dash-main">
+  <div class="dash-loading">Loading…</div>
+</main>
+
+<script src="/dashboard/dashboard.js" type="module"></script>
+</body>
+</html>

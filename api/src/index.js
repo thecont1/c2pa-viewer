@@ -12,7 +12,7 @@ import { Hono } from 'hono';
 import { parse as parseYaml } from 'yaml';
 
 import { authMw, optionalAuthMw, rateLimitMw, quotaMw } from './auth.js';
-import { corsMw, preflightMw } from './cors.js';
+import { corsMw, dashboardCorsMw, preflightMw } from './cors.js';
 import { verifyHandler, miniHandler } from './verify.js';
 import { createJobHandler, getJobHandler } from './jobs.js';
 import { signupFreeHandler, getKeyHandler, getUsageHandler, rotateKeyHandler, revokeKeyHandler, listJobsHandler } from './keyman.js';
@@ -75,19 +75,19 @@ app.get('/v1/jobs/:job_id', corsMw, authMw, rateLimitMw, getJobHandler);
 // Phase 4 self-service. Signup is the single unauthenticated write surface
 // (Turnstile + per-IP limited inside the handler); everything else is keyed
 // by the presented key itself and never consumes verification quota.
-app.post('/v1/signup/free', signupFreeHandler);
-app.get('/v1/key', corsMw, authMw, rateLimitMw, getKeyHandler);
-app.get('/v1/usage', corsMw, authMw, rateLimitMw, getUsageHandler);
-app.post('/v1/key/rotate', corsMw, authMw, rateLimitMw, rotateKeyHandler);
-app.post('/v1/key/revoke', corsMw, authMw, rateLimitMw, revokeKeyHandler);
-app.get('/v1/jobs', corsMw, authMw, rateLimitMw, listJobsHandler);
+app.post('/v1/signup/free', dashboardCorsMw, signupFreeHandler);
+app.get('/v1/key', dashboardCorsMw, corsMw, authMw, rateLimitMw, getKeyHandler);
+app.get('/v1/usage', dashboardCorsMw, corsMw, authMw, rateLimitMw, getUsageHandler);
+app.post('/v1/key/rotate', dashboardCorsMw, corsMw, authMw, rateLimitMw, rotateKeyHandler);
+app.post('/v1/key/revoke', dashboardCorsMw, corsMw, authMw, rateLimitMw, revokeKeyHandler);
+app.get('/v1/jobs', dashboardCorsMw, corsMw, authMw, rateLimitMw, listJobsHandler);
 
 // Phase 4 billing. The webhook is unauthenticated by design — the Stripe
 // signature IS the credential. Checkout accepts optional key auth (upgrade in
 // place vs keyless new-customer flow); reveal and portal speak for themselves.
-app.post('/v1/billing/checkout', optionalAuthMw, checkoutHandler);
-app.get('/v1/billing/reveal', revealHandler);
-app.post('/v1/billing/portal', corsMw, authMw, rateLimitMw, portalHandler);
+app.post('/v1/billing/checkout', dashboardCorsMw, optionalAuthMw, checkoutHandler);
+app.get('/v1/billing/reveal', dashboardCorsMw, revealHandler);
+app.post('/v1/billing/portal', dashboardCorsMw, corsMw, authMw, rateLimitMw, portalHandler);
 app.post('/v1/billing/webhook', webhookHandler);
 
 // Public endpoints.
