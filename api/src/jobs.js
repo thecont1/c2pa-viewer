@@ -9,7 +9,14 @@ import { validateAssetUrl } from './urlfetch.js';
 import { isBlockedHost } from '../../packages/core/src/ssrf.js';
 import { chargeQuota, reserveQuota, commitQuota, releaseQuota, quotaLimited } from './quota.js';
 
-export const MAX_JOB_BYTES = 1024 * 1024 * 1024; // 1 GiB
+export const MAX_JOB_BYTES = 1024 * 1024 * 1024; // 1 GiB — absolute architectural ceiling
+// Default per-job cap for async verification. Async verification costs an
+// order of magnitude more per unit than sync, and cost scales with asset
+// size (container memory-seconds + R2 storage) — so the default matches the
+// sync cap. keys.max_job_bytes (NULL = default) holds privately negotiated
+// larger caps; cap_bytes on the job row snapshots the effective cap at
+// creation so the consumer enforces exactly what was admitted.
+export const DEFAULT_JOB_CAP = 20 * 1024 * 1024; // 20 MiB
 export const JOB_BUCKET = 'c2pa-verify-jobs';
 const UPLOAD_EXPIRY_SECONDS = 3600;
 const JOB_CREATE_FIELDS = new Set(['url', 'filename', 'mime', 'size_bytes', 'webhook_url', 'include', 'trust', 'strip_gps']);
@@ -39,7 +46,7 @@ function validateHttpCallback(urlString, field, env) {
 
 // Validate and normalize the JobCreate body. Throws ApiError with the same
 // kind mapping used by /v1/verify so REST errors stay consistent.
-export function validateJobCreate(body, env) {
+export function validateJobCreate(body, env, capBytes = DEFAULT_JOB_CAP) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
         throw new ApiError('invalid', 'JSON body must be an object');
     }
@@ -72,8 +79,8 @@ export function validateJobCreate(body, env) {
             throw new ApiError('invalid', 'size_bytes must be a non-negative integer');
         }
         sizeBytes = body.size_bytes;
-        if (sizeBytes > MAX_JOB_BYTES) {
-            throw new ApiError('too_large', 'asset exceeds the 1 GiB asynchronous verification cap');
+        if (sizeBytes > capBytes) {
+            throw new ApiError('too_large', `asset exceeds the asynchronous verification cap of ${capBytes} bytes`);
         }
     }
 
@@ -165,7 +172,10 @@ async function jobCreatedPayload(env, row) {
 
 // Shared REST/MCP creation path. Returns { statusCode, payload, row }.
 export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey) {
-    const input = validateJobCreate(body, env);
+    const capBytes = Number.isInteger(keyRow.max_job_bytes) && keyRow.max_job_bytes > 0
+        ? Math.min(keyRow.max_job_bytes, MAX_JOB_BYTES)
+        : DEFAULT_JOB_CAP;
+    const input = validateJobCreate(body, env, capBytes);
     const idem = idempotencyKey && idempotencyKey.trim() ? idempotencyKey.trim().slice(0, 255) : null;
 
     if (idem) {
@@ -210,11 +220,11 @@ export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey
     // Bytes are added when the real object size is known; refund-on-failure
     // does not exist yet. Test keys are never charged.
     const insertStmt = env.DB.prepare(
-        `INSERT INTO jobs (job_id,key_id,status,idempotency_key,source,webhook_url,include,trust,strip_gps,error,object_key,size_bytes,created_at,updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        `INSERT INTO jobs (job_id,key_id,status,idempotency_key,source,webhook_url,include,trust,strip_gps,error,object_key,size_bytes,cap_bytes,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
         jobId, keyRow.id, status, idem, JSON.stringify(input.source), input.webhook_url,
-        input.include, input.trust, input.strip_gps ? 1 : 0, null, objectKey, input.size_bytes, now, now
+        input.include, input.trust, input.strip_gps ? 1 : 0, null, objectKey, input.size_bytes, capBytes, now, now
     );
     let row;
     let inserted = false;

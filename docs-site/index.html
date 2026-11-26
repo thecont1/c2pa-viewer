@@ -99,7 +99,7 @@ table.docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; m
 <table class="docs-table">
 <tr><th>Tier</th><th>Price</th><th>Verifications / month</th><th>Async jobs</th></tr>
 <tr><td>Free</td><td>$0</td><td>500</td><td>No — sync only</td></tr>
-<tr><td>Sync Only</td><td>$3.99/mo or $47.99/yr per unit</td><td>10,000 per unit, in multiples up to 100×</td><td>No — sync only</td></tr>
+<tr><td>Sync Only</td><td>$3.99/mo or $44.99/yr per unit</td><td>10,000 per unit, in multiples up to 100×</td><td>No — sync only</td></tr>
 <tr><td>Sync+Async</td><td>$9.99/mo or $99.99/yr per unit</td><td>25,000 per unit, in multiples up to 100×</td><td>Yes</td></tr>
 </table>
 <p>Quotas are hard caps enforced atomically per key. A verification counts when it succeeds (sync) or is accepted (async jobs); failed verifications and every test-key call are free. Exhaustion returns 429 <code>quota_exceeded</code>; the count resets on the UTC month boundary. Job submissions charge at acceptance — a job that later fails is not refunded.</p>
@@ -115,7 +115,7 @@ table.docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; m
 <p>Query parameters: <code>include</code> (sections: <code>exif,iptc,gps,thumbnails,raw_manifest</code>; default <code>exif,iptc</code>), <code>trust</code> (<code>c2pa</code> or <code>c2pa_and_itl</code>, default the latter), <code>strip_gps</code> (default true).</p>
 <p>The response is the full <code>VerifyResult</code> — validation state, trust basis, active manifest, claim generator, signer chain, provenance rows, EXIF/IPTC sections, thumbnails, and the asset digest. See the schemas in <a href="https://api.c2pa.thecontrarian.in/v1/openapi.json">the OpenAPI document</a>.</p>
 <p><span class="method method-get">GET</span><span class="endpoint">/v1/verify/mini?url=…</span> — compact trust card (the same payload the viewer's nutritional label uses).</p>
-<div class="callout">Need more than 20 MiB, or files that take a while to fetch? Use async jobs — the ceiling there is 1 GiB.</div>
+<div class="callout">Need results for files that take a while to fetch, or webhook delivery instead of polling? Use async jobs — assets up to 20 MiB by default; larger caps are negotiated per key (contact the operator).</div>
 
 <h2 id="jobs">Async jobs</h2>
 <p><span class="method method-post">POST</span><span class="endpoint">/v1/jobs</span> — submit; <span class="method method-get">GET</span><span class="endpoint">/v1/jobs/{job_id}</span> — poll; <span class="method method-get">GET</span><span class="endpoint">/v1/jobs</span> — list.</p>

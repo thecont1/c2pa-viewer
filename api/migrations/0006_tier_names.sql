@@ -1,8 +1,10 @@
 -- 0006: pricing model change — tiers are now free/sync_only/sync_async.
 -- SQLite cannot alter a CHECK constraint; rebuild the keys table with the
 -- new constraint, copy all rows, and restore the billing unique index.
--- Free rows carry over unchanged; no pro/scale rows exist (billing never
--- went live), but any would fail the new CHECK — coerce them to free.
+-- pro/scale rows are pre-launch test artifacts (billing never went live —
+-- no paying customers); they had async access, so they map to sync_async
+-- rather than free. quota_monthly is a separate stored column and is
+-- untouched either way.
 
 CREATE TABLE keys_new (
     id              TEXT PRIMARY KEY,
@@ -27,7 +29,7 @@ CREATE TABLE keys_new (
 
 INSERT INTO keys_new
 SELECT id, key_hash, display_prefix, name, type,
-       CASE WHEN tier IN ('free','sync_only','sync_async') THEN tier ELSE 'free' END,
+       CASE WHEN tier IN ('free','sync_only','sync_async') THEN tier ELSE 'sync_async' END,
        scopes, quota_monthly, allowed_origins, created_at, rotated_at, revoked_at, notes,
        stripe_customer_id, stripe_subscription_id, billing_status, checkout_session_id, checkout_revealed_at
 FROM keys;

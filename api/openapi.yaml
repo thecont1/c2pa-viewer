@@ -1324,7 +1324,7 @@ components:
         url: { type: string, format: uri, description: Asset URL to fetch and verify. }
         filename: { type: string, description: Display filename hint. }
         mime: { type: string, description: Expected MIME type. }
-        size_bytes: { type: integer, description: "Expected size, used for upload-session sizing." }
+        size_bytes: { type: integer, description: "Expected size, used for upload-session sizing. Async assets are capped at 20 MiB by default; larger caps are privately negotiated per key." }
         webhook_url: { type: string, format: uri, description: Callback for job.completed. }
         include:
           type: string

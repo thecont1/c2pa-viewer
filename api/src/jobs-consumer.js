@@ -84,11 +84,11 @@ async function openUpstream(urlString, env) {
 // Stream an upstream response into R2 through multipart upload. R2 requires
 // known-length streams; buffering one uniform 8 MiB part at a time keeps the
 // Worker's memory bounded while supporting chunked/no-content-length upstreams.
-async function streamUpstreamToR2(env, key, resp, contentType) {
+async function streamUpstreamToR2(env, key, resp, contentType, capBytes = MAX_JOB_BYTES) {
     const declared = Number(resp.headers.get('content-length') || 0);
-    if (declared > MAX_JOB_BYTES) {
+    if (declared > capBytes) {
         try { await resp.body.cancel(); } catch { }
-        throw new TerminalJobError(413, 'payload_too_large', `upstream asset exceeds the 1 GiB asynchronous verification cap (content-length ${declared})`, { max_job_bytes: MAX_JOB_BYTES });
+        throw new TerminalJobError(413, 'payload_too_large', `upstream asset exceeds the asynchronous verification cap (content-length ${declared})`, { max_job_bytes: MAX_JOB_BYTES });
     }
     if (!resp.body) throw new TerminalJobError(502, 'upstream_fetch_failed', 'upstream response had no body');
 
@@ -115,7 +115,7 @@ async function streamUpstreamToR2(env, key, resp, contentType) {
             if (done) break;
             let pos = 0;
             total += value.byteLength;
-            if (total > MAX_JOB_BYTES) {
+            if (total > capBytes) {
                 try { await reader.cancel(); } catch { }
                 throw new TerminalJobError(413, 'payload_too_large', 'asset exceeds the 1 GiB asynchronous verification cap', { max_job_bytes: MAX_JOB_BYTES });
             }
@@ -258,7 +258,7 @@ async function processJob(env, jobId, token) {
             const upstream = await openUpstream(source.url, env);
             const upstreamType = (upstream.resp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
             if (!declaredMime) declaredMime = upstreamType;
-            const stored = await streamUpstreamToR2(env, row.object_key, upstream.resp, upstreamType);
+            const stored = await streamUpstreamToR2(env, row.object_key, upstream.resp, upstreamType, row.cap_bytes || MAX_JOB_BYTES);
             sizeBytes = stored.size;
             head = stored.head;
         } else {

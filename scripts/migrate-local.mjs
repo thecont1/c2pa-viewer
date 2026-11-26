@@ -46,4 +46,12 @@ export function applyLocalMigrations(apiDir) {
     if (tableSql.includes("'pro'")) {
         run(['--file', 'migrations/0006_tier_names.sql']);
     }
+
+    // 0007 uses ALTER TABLE ADD COLUMN — apply only when its signature
+    // column is absent (same constraint as 0003).
+    const out7 = run(['--command', 'PRAGMA table_info(jobs);', '--json']);
+    const jobsCols = ((JSON.parse(out7)[0] && JSON.parse(out7)[0].results) || []).map((r) => r.name);
+    if (!jobsCols.includes('cap_bytes')) {
+        run(['--file', 'migrations/0007_job_caps.sql']);
+    }
 }
