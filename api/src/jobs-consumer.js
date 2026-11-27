@@ -88,7 +88,7 @@ async function streamUpstreamToR2(env, key, resp, contentType, capBytes = MAX_JO
     const declared = Number(resp.headers.get('content-length') || 0);
     if (declared > capBytes) {
         try { await resp.body.cancel(); } catch { }
-        throw new TerminalJobError(413, 'payload_too_large', `upstream asset exceeds the asynchronous verification cap (content-length ${declared})`, { max_job_bytes: MAX_JOB_BYTES });
+        throw new TerminalJobError(413, 'payload_too_large', `upstream asset exceeds the asynchronous verification cap (content-length ${declared})`, { max_job_bytes: capBytes });
     }
     if (!resp.body) throw new TerminalJobError(502, 'upstream_fetch_failed', 'upstream response had no body');
 
@@ -117,7 +117,7 @@ async function streamUpstreamToR2(env, key, resp, contentType, capBytes = MAX_JO
             total += value.byteLength;
             if (total > capBytes) {
                 try { await reader.cancel(); } catch { }
-                throw new TerminalJobError(413, 'payload_too_large', 'asset exceeds the 1 GiB asynchronous verification cap', { max_job_bytes: MAX_JOB_BYTES });
+                throw new TerminalJobError(413, 'payload_too_large', 'asset exceeds the admitted asynchronous verification cap', { max_job_bytes: capBytes });
             }
             const headNeed = Math.min(12 - headLen, value.byteLength);
             if (headNeed > 0) { head.set(value.subarray(0, headNeed), headLen); headLen += headNeed; }
@@ -266,8 +266,13 @@ async function processJob(env, jobId, token) {
             if (!meta) throw new TerminalJobError(422, 'invalid_request', 'uploaded object is missing');
             objectEtag = meta.etag || null;
             sizeBytes = meta.size;
-            if (sizeBytes > MAX_JOB_BYTES) {
-                throw new TerminalJobError(413, 'payload_too_large', 'asset exceeds the 1 GiB asynchronous verification cap', { max_job_bytes: MAX_JOB_BYTES });
+            // The admitted cap is the per-job snapshot taken at creation
+            // (migration 0007: "the consumer enforces exactly what was
+            // admitted"), not the 1 GiB ceiling — a 20 MiB-default job must
+            // not be able to PUT a gigabyte through the presigned URL.
+            const uploadCap = row.cap_bytes || MAX_JOB_BYTES;
+            if (sizeBytes > uploadCap) {
+                throw new TerminalJobError(413, 'payload_too_large', 'asset exceeds the admitted asynchronous verification cap', { max_job_bytes: uploadCap });
             }
             head = await objectHeadBytes(env, row.object_key);
             if (!declaredMime) declaredMime = (meta.httpMetadata && meta.httpMetadata.contentType) || '';
@@ -429,8 +434,11 @@ async function handleMessage(env, message) {
         if (!key.startsWith('uploads/')) return;
         const jobId = key.slice('uploads/'.length).split('/')[0];
         if (!jobId) return;
-        if (body.object.size > MAX_JOB_BYTES) {
-            const row = await getJobRow(env.DB, jobId);
+        // The row must be read before the size gate: the enforced cap is the
+        // per-job admission snapshot (cap_bytes), not the 1 GiB ceiling.
+        const row = await getJobRow(env.DB, jobId);
+        const notifCap = (row && row.cap_bytes) || MAX_JOB_BYTES;
+        if (body.object.size > notifCap) {
             if (row && (row.status === 'succeeded' || row.status === 'failed')) {
                 // Recovery path: a previous delivery committed the terminal row
                 // but failed before scheduling the webhook.
@@ -442,7 +450,7 @@ async function handleMessage(env, message) {
                 // and complete the job concurrently. Only fail the job when the
                 // row is still awaiting_upload — never clobber a terminal state
                 // — and schedule the webhook only when this update won.
-                const problem413 = problemPayload(413, 'payload_too_large', 'asset exceeds the 1 GiB asynchronous verification cap', { max_job_bytes: MAX_JOB_BYTES });
+                const problem413 = problemPayload(413, 'payload_too_large', 'asset exceeds the admitted asynchronous verification cap', { max_job_bytes: notifCap });
                 const now = nowIso();
                 const r = await env.DB.prepare(
                     `UPDATE jobs SET status='failed', error=?, size_bytes=?, processing_token=NULL, updated_at=?, completed_at=? WHERE job_id=? AND status='awaiting_upload'`

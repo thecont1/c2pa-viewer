@@ -94,7 +94,7 @@ export function isDashboardOrigin(env, origin) {
         } else if (origin === entry) return true;
     }
     if (host.endsWith(DASHBOARD_PREVIEW_SUFFIX) || host === DASHBOARD_PREVIEW_SUFFIX.slice(1)) return true;
-    if (host === 'localhost' || host.startsWith('localhost:') || host.startsWith('127.0.0.1')) return true;
+    if (host === 'localhost' || host.startsWith('localhost:') || host === '127.0.0.1' || host.startsWith('127.0.0.1:')) return true;
     return false;
 }
 

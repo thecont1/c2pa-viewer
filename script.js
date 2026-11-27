@@ -830,11 +830,11 @@ function renderProvenance(metadata) {
         </li>
         <li class="provenance-item">
             <strong>Post-processing</strong>
-            <p>Edited in ${metadata.exif?.Software}</p>
+            <p>Edited in ${escHtml(metadata.exif?.Software)}</p>
         </li>
         <li class="provenance-item">
             <strong>Final Version</strong>
-            <p>Saved on ${formatDate(metadata.exif?.DateTime)} as ${metadata.format} format</p>
+            <p>Saved on ${escHtml(formatDate(metadata.exif?.DateTime))} as ${escHtml(metadata.format)} format</p>
         </li>
         <li class="provenance-item">
             <span class="c2pa-verification" style="display: inline-flex;">✓ C2PA Verified</span>

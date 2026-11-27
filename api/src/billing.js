@@ -391,15 +391,23 @@ async function verifyStripeSignature(secret, header, rawBody) {
 }
 
 async function provisionUpgrade(db, keyId, tier, customerId, subscriptionId, units) {
-    // Stripe redelivers events: a duplicate or out-of-order
-    // checkout.session.completed must not resurrect a key whose subscription
-    // was already canceled — canceled is terminal everywhere else in the
-    // lifecycle. billing_status IS NULL rows (pre-billing keys) provision
-    // normally.
+    // Provision whenever this checkout session carries a subscription the
+    // row does not already point at. subscription.deleted NULLs the linkage,
+    // so a canceled row satisfies the condition for a genuinely NEW
+    // subscription — re-subscribing after cancellation must re-provision,
+    // or the customer is billed for a key that stays free forever with no
+    // webhook path able to repair it. The duplicate-delivery case is a
+    // no-op by construction: a redelivered session for the subscription the
+    // row ALREADY carries matches neither arm.
+    // Residual race, accepted: a redelivered session for the SAME canceled
+    // subscription arriving after deletion nulled the linkage also matches
+    // — it requires webhook delivery failure inside Stripe's retry window
+    // plus a same-window cancellation, and the redelivered
+    // subscription.deleted following behind it re-cancels the row.
     await db.prepare(
         `UPDATE keys SET tier = ?, quota_monthly = ?, stripe_customer_id = ?, stripe_subscription_id = ?, billing_status = 'active'
-         WHERE id = ? AND (billing_status IS NULL OR billing_status != 'canceled')`
-    ).bind(tier, quotaFor(tier, units), customerId, subscriptionId, keyId).run();
+         WHERE id = ? AND (stripe_subscription_id IS NULL OR stripe_subscription_id != ?)`
+    ).bind(tier, quotaFor(tier, units), customerId, subscriptionId, keyId, subscriptionId).run();
 }
 
 export async function webhookHandler(c) {
@@ -444,11 +452,24 @@ export async function webhookHandler(c) {
                 // unpaid is stored distinctly from canceled: it carries free
                 // entitlement only, but a later active event restores the
                 // paid tier because the row is not terminal-skipped.
+                // Only active/past_due/unpaid carry the paid entitlement.
+                // Every other Stripe status — incomplete, incomplete_expired,
+                // paused, anything new — must fail CLOSED to free quota:
+                // defaulting unknown statuses to active grants the paid tier
+                // on a subscription that may never have collected a payment,
+                // and incomplete_expired is terminal with no
+                // subscription.deleted ever arriving to correct it. The raw
+                // status is stored rather than collapsed to 'canceled' so a
+                // later legitimate incomplete -> active transition still
+                // restores the paid tier (the terminal-canceled guard would
+                // otherwise ignore it).
                 const status = obj.status === 'active' ? 'active'
                     : obj.status === 'past_due' ? 'past_due'
-                    : obj.status === 'unpaid' ? 'unpaid' : 'active';
-                const effectiveTier = status === 'unpaid' ? 'free' : tier;
-                const effectiveQuota = status === 'unpaid' ? FREE_QUOTA : quotaFor(tier, units);
+                    : obj.status === 'unpaid' ? 'unpaid'
+                    : typeof obj.status === 'string' && obj.status ? obj.status.slice(0, 64) : 'inactive';
+                const entitled = status === 'active' || status === 'past_due';
+                const effectiveTier = entitled ? tier : 'free';
+                const effectiveQuota = entitled ? quotaFor(tier, units) : FREE_QUOTA;
                 // Stripe does not guarantee event ordering — an older
                 // subscription.updated arriving after subscription.deleted
                 // would resurrect the paid tier. Skip rows already terminally

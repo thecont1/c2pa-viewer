@@ -27,23 +27,17 @@ pub fn has_blocked_remote_url(bytes: &[u8]) -> bool {
             let is_https = is_http && lc(bytes[i + 4]) == b's';
             let sep = if is_https { 5 } else { 4 };
             // The separator must accept backslash-mixed forms: JSON producers
-            // may escape slashes as \/, so a manifest can carry
-            // "http:\/\/evil\/..." — the WHATWG parser treats \ as / for
-            // special schemes, but the scan never reaches it when it insists
-            // on a literal //. Require a colon then at least two separator
-            // bytes drawn from {/, \} with at least one slash.
-            if is_http && i + sep + 2 < n && bytes[i + sep] == b':' {
+            // may escape slashes as \/. After the colon, skip any run of /
+            // and \ — including an EMPTY run. The WHATWG parser treats every
+            // one of these as an authority for special schemes: //, \/, \, a
+            // single slash, and even zero separators (http:127.0.0.1 parses
+            // to host 127.0.0.1). Requiring the colon only costs a few extra
+            // URL parses on prose — cheap, and a blocked hit only DISABLES
+            // remote fetching, which is the fail-safe direction.
+            if is_http && bytes[i + sep] == b':' {
                 let mut k = i + sep + 1;
-                let mut slashes = 0usize;
                 while k < n && (bytes[k] == b'/' || bytes[k] == b'\\') {
-                    if bytes[k] == b'/' {
-                        slashes += 1;
-                    }
                     k += 1;
-                }
-                if slashes < 1 || k - (i + sep + 1) < 2 {
-                    i += 1;
-                    continue;
                 }
                 let mut end = k;
                 while end < n && end - i < 2083 {
@@ -53,17 +47,19 @@ pub fn has_blocked_remote_url(bytes: &[u8]) -> bool {
                     }
                     end += 1;
                 }
-                if let Ok(literal) = std::str::from_utf8(&bytes[i..end]) {
-                    if let Some(host) = url_host(literal) {
-                        if is_blocked_host(&host) {
-                            return true;
+                if end > k {
+                    if let Ok(literal) = std::str::from_utf8(&bytes[i..end]) {
+                        if let Some(host) = url_host(literal) {
+                            if is_blocked_host(&host) {
+                                return true;
+                            }
                         }
                     }
+                    // urls with unparseable/empty hosts are ignored — the scanner is
+                    // a pre-filter over raw bytes, not the fetch decision itself
+                    i = end;
+                    continue;
                 }
-                // urls with unparseable/empty hosts are ignored — the scanner is
-                // a pre-filter over raw bytes, not the fetch decision itself
-                i = end;
-                continue;
             }
         }
         i += 1;

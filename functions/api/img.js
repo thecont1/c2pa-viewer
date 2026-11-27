@@ -51,19 +51,51 @@ export async function onRequestGet(context) {
         return json({ error: 'host not allowed' }, 403);
     }
 
-    const headers = { ...BROWSER_HEADERS };
-    headers['Referer'] = `${upstream.protocol}//${upstream.host}/`;
-
-    let upstreamResp;
-    try {
-        upstreamResp = await fetch(upstream.toString(), {
-            headers,
-            redirect: 'follow',
-            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        });
-    } catch (e) {
-        return json({ error: `upstream fetch failed: ${e.message}` }, 502);
+    // Redirects are followed manually, one hop at a time, with the SSRF
+    // guard re-evaluated on every Location target — the initial-URL check
+    // above means nothing if a redirect can pivot to loopback, link-local
+    // or private space. Every other fetch path in the repo already does
+    // this (api/src/urlfetch.js); the proxy must not diverge.
+    const MAX_REDIRECTS = 5;
+    let current = upstream;
+    let upstreamResp = null;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        const headers = { ...BROWSER_HEADERS };
+        headers['Referer'] = `${current.protocol}//${current.host}/`;
+        let resp;
+        try {
+            resp = await fetch(current.toString(), {
+                headers,
+                redirect: 'manual',
+                signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+            });
+        } catch (e) {
+            return json({ error: `upstream fetch failed: ${e.message}` }, 502);
+        }
+        if (resp.status >= 300 && resp.status < 400) {
+            const location = resp.headers.get('location');
+            resp.body?.cancel();
+            if (!location) return json({ error: 'redirect without location' }, 502);
+            if (hop === MAX_REDIRECTS) return json({ error: 'too many redirects' }, 502);
+            let next;
+            try {
+                next = new URL(location, current);
+            } catch {
+                return json({ error: 'invalid redirect target' }, 502);
+            }
+            if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+                return json({ error: 'redirect target not allowed' }, 403);
+            }
+            if (isBlockedHost(next.hostname)) {
+                return json({ error: 'redirect target not allowed' }, 403);
+            }
+            current = next;
+            continue;
+        }
+        upstreamResp = resp;
+        break;
     }
+    if (!upstreamResp) return json({ error: 'too many redirects' }, 502);
 
     if (!upstreamResp.ok) {
         return json({ error: `upstream returned HTTP ${upstreamResp.status}` }, 502);

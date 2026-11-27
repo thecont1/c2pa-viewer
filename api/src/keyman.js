@@ -275,8 +275,8 @@ export async function rotateKeyHandler(c) {
     // transactions, so no interleaving can slip between them.
     const statements = [
         c.env.DB.prepare(
-            `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, created_at, rotated_at, stripe_customer_id, stripe_subscription_id, billing_status)
-             SELECT ?, ?, ?, name, type, tier, scopes, quota_monthly, allowed_origins, ?, ?,
+            `INSERT INTO keys (id, key_hash, display_prefix, name, type, tier, scopes, quota_monthly, allowed_origins, max_job_bytes, created_at, rotated_at, stripe_customer_id, stripe_subscription_id, billing_status)
+             SELECT ?, ?, ?, name, type, tier, scopes, quota_monthly, allowed_origins, max_job_bytes, ?, ?,
                     stripe_customer_id, stripe_subscription_id, COALESCE(billing_status, 'none')
              FROM keys WHERE id = ?`
         ).bind(id, hash, displayPrefix, now, now, row.id),

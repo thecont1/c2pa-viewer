@@ -52,17 +52,31 @@ function scanUrlLiterals(bytes, visit) {
             const isHttp = lc(bytes[i + 1]) === 0x74 && lc(bytes[i + 2]) === 0x74 && lc(bytes[i + 3]) === 0x70;
             const isHttps = isHttp && lc(bytes[i + 4]) === 0x73;
             const sep = isHttps ? 5 : 4;
-            if (isHttp && bytes[i + sep] === 0x3a && bytes[i + sep + 1] === 0x2f && bytes[i + sep + 2] === 0x2f) {
-                let end = i + sep + 3;
+            if (isHttp && bytes[i + sep] === 0x3a) {
+                // After the colon, skip any run of / and \ — including an
+                // EMPTY run. The WHATWG parser treats every one of these as
+                // an authority for special schemes: //, \/, \, one slash,
+                // and even zero separators (http:127.0.0.1 parses to host
+                // 127.0.0.1). JSON producers escape slashes as \/, so a
+                // scan that insists on a literal // never sees the form the
+                // parser resolves to loopback. Requiring the colon only
+                // costs a few extra URL parses on prose like "the http:
+                // protocol" — cheap, and a blocked hit only DISABLES remote
+                // fetching, which is the fail-safe direction.
+                let k = i + sep + 1;
+                while (k < n && (bytes[k] === 0x2f || bytes[k] === 0x5c)) k++;
+                let end = k;
                 while (end < n && end - i < 2083) {
                     const c = bytes[end];
                     // URL token ends at whitespace, quotes, angle brackets, controls.
                     if (c <= 0x20 || c === 0x22 || c === 0x27 || c === 0x3c || c === 0x3e || c === 0x60 || c >= 0x7f) break;
                     end++;
                 }
-                visit(urlDecoder.decode(bytes.subarray(i, end)));
-                i = end;
-                continue;
+                if (end > k) {
+                    visit(urlDecoder.decode(bytes.subarray(i, end)));
+                    i = end;
+                    continue;
+                }
             }
         }
         i++;

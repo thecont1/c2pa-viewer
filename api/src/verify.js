@@ -298,6 +298,7 @@ export function apiErrorResponse(e) {
     switch (e.kind) {
         case 'too_large': return payloadTooLarge();
         case 'sandbox':
+        case 'forbidden':
             return problem(403, 'forbidden', { detail: e.message });
         case 'unsupported':
         case 'unsupported_ct':

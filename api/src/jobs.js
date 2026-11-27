@@ -172,6 +172,16 @@ async function jobCreatedPayload(env, row) {
 
 // Shared REST/MCP creation path. Returns { statusCode, payload, row }.
 export async function createJobRecord(env, keyRow, keyKind, body, idempotencyKey) {
+    // The tier gate lives in this shared creation path — the single choke
+    // point both REST and MCP must pass through — so the two transports can
+    // never drift into different entitlements for the same key. Async work
+    // costs an order of magnitude more per verification (container time,
+    // object storage, webhook delivery) and the lower tiers are priced for
+    // the sync cost curve. Test keys bypass: they exist for integration
+    // testing and are already confined to the fixture corpus.
+    if (keyKind !== 'test' && (!keyRow || keyRow.tier !== 'sync_async')) {
+        throw new ApiError('forbidden', 'async jobs require a Sync+Async tier key — sync verification (POST /v1/verify) is available on all tiers');
+    }
     const capBytes = Number.isInteger(keyRow.max_job_bytes) && keyRow.max_job_bytes > 0
         ? Math.min(keyRow.max_job_bytes, MAX_JOB_BYTES)
         : DEFAULT_JOB_CAP;
@@ -280,18 +290,8 @@ export async function createJobHandler(c) {
     try { body = await c.req.json(); } catch {
         return problem(422, 'invalid_request', { detail: 'malformed JSON body' });
     }
-    // Async jobs are a sync_async-tier feature. The verification itself is
-    // the same engine either way — the gate exists because async delivery
-    // costs an order of magnitude more per verification (container time,
-    // object storage, webhook delivery) and the lower tiers are priced for
-    // the sync cost curve.
-    // Test keys bypass the tier gate: they exist for integration testing and
-    // are already confined to the fixture corpus.
-    const keyRow = c.get('keyRow');
-    const keyKind = c.get('keyKind') || 'live';
-    if (keyKind !== 'test' && (!keyRow || keyRow.tier !== 'sync_async')) {
-        return problem(403, 'forbidden', { detail: 'async jobs require a Sync+Async tier key — sync verification (POST /v1/verify) is available on all tiers' });
-    }
+    // The sync_async tier gate lives inside createJobRecord — the single
+    // choke point shared with the MCP transport — not in this handler.
     try {
         const created = await createJobRecord(
             c.env, c.get('keyRow'), c.get('keyKind'), body, c.req.header('idempotency-key')
