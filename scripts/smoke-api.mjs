@@ -532,7 +532,7 @@ async function main() {
             const golden = JSON.parse(readFileSync(join(GOLDEN, 'C.jpg.c2paMini.json'), 'utf8'));
             const r = await req('GET', `${BASE_A}/v1/verify/mini?url=${encodeURIComponent(upstreamC)}`, { key: server.key });
             const j = r.json || {};
-            const expectMore = `https://c2pa.thecontrarian.in/?uri=${encodeURIComponent(upstreamC)}`;
+            const expectMore = `https://c2pa.creds.im/?uri=${encodeURIComponent(upstreamC)}`;
             row('mini golden-shape: creator/issued_by/dst/status match golden',
                 r.status === 200
                 && j.creator === golden.creator
