@@ -27,7 +27,7 @@ const CODE_TITLES = {
 // assembled in jobs.js (so a title/type change reaches both).
 export function buildProblemPayload(status, code, detail, extra = {}) {
     const body = {
-        type: `https://api.creds.im/problems/${code}`,
+        type: `https://api.c2pa.creds.im/problems/${code}`,
         title: CODE_TITLES[code] || 'Error',
         status,
         code,
@@ -39,7 +39,7 @@ export function buildProblemPayload(status, code, detail, extra = {}) {
 
 // problem(status, code, { detail, headers, ...extraMembers })
 // Builds the problem response. `type` follows the spec convention
-// https://api.creds.im/problems/<code>.
+// https://api.c2pa.creds.im/problems/<code>.
 export function problem(status, code, { detail, headers = {}, ...extra } = {}) {
     const body = buildProblemPayload(status, code, detail, extra);
     return new Response(JSON.stringify(body), {

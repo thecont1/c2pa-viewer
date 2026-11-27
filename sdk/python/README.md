@@ -1,6 +1,6 @@
 # c2pa-verify (Python)
 
-Thin stdlib-only client for the [C2PA Verify API](https://creds.im/docs). Python 3.9+, no dependencies.
+Thin stdlib-only client for the [C2PA Verify API](https://c2pa.creds.im/docs). Python 3.9+, no dependencies.
 
 ```python
 from c2pa_verify import C2paClient

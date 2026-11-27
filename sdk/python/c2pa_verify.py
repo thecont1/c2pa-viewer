@@ -14,7 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-DEFAULT_BASE = 'https://api.creds.im'
+DEFAULT_BASE = 'https://api.c2pa.creds.im'
 
 
 class C2paError(Exception):

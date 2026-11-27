@@ -7,7 +7,7 @@ were applied, and when. This project lets you read those labels.
 
 ## What it can do for you
 
-**Check any image in your browser, for free, at [creds.im](https://creds.im/)** —
+**Check any image in your browser, for free, at [creds.im](https://c2pa.creds.im/)** —
 drop a file or paste a link and instantly see:
 
 - **Is it really what it claims to be?** A green "Authenticity Verified" badge
@@ -27,7 +27,7 @@ drop a file or paste a link and instantly see:
 ## For developers: the verification API
 
 The same engine is available as a commercial API
-(`api.creds.im`) so your own software can verify images
+(`api.c2pa.creds.im`) so your own software can verify images
 automatically — with TypeScript and Python SDKs, plus an MCP server so AI
 agents can verify images natively. It works in two modes:
 
@@ -59,8 +59,8 @@ expensive.
 | Sync+Async | $9.99/mo or $99.99/yr per 25,000 | adds async jobs + webhooks |
 
 Self-service signup, usage meters, and billing live at
-[creds.im/dashboard](https://creds.im/dashboard/).
-Full API documentation: [creds.im/docs](https://creds.im/docs/).
+[creds.im/dashboard](https://c2pa.creds.im/dashboard/).
+Full API documentation: [creds.im/docs](https://c2pa.creds.im/docs/).
 
 ## For engineers
 
