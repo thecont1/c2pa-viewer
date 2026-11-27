@@ -304,7 +304,7 @@ function isProblemJsonContentType(headers) {
 
 function basicProblemShape(json, code, status) {
     return json && typeof json === 'object'
-        && typeof json.type === 'string' && json.type === `https://api.c2pa.thecontrarian.in/problems/${code}`
+        && typeof json.type === 'string' && json.type.endsWith(`/problems/${code}`)
         && typeof json.title === 'string'
         && json.status === status
         && json.code === code;
