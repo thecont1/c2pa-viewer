@@ -71,7 +71,7 @@ export class C2paError extends Error {
 export class C2paClient {
     private base: string;
 
-    constructor(private key: string, baseUrl = 'https://api.c2pa.thecontrarian.in') {
+    constructor(private key: string, baseUrl = 'https://api.creds.im') {
         this.base = baseUrl.replace(/\/$/, '');
     }
 

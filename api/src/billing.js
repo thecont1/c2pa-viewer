@@ -150,7 +150,7 @@ export async function checkoutHandler(c) {
         if (!ok) return problem(403, 'forbidden', { detail: 'Turnstile verification failed.' });
     }
 
-    const base = (c.env.DASHBOARD_BASE_URL || 'https://c2pa.thecontrarian.in').replace(/\/$/, '');
+    const base = (c.env.DASHBOARD_BASE_URL || 'https://creds.im').replace(/\/$/, '');
     const params = {
         mode: 'subscription',
         line_items: { 0: { price: priceForTier(c.env, tier, period), quantity: units } },
@@ -341,7 +341,7 @@ export async function portalHandler(c) {
     if (!keyRow.stripe_customer_id) {
         return problem(422, 'invalid_request', { detail: 'no billing account is linked to this key' });
     }
-    const base = (c.env.DASHBOARD_BASE_URL || 'https://c2pa.thecontrarian.in').replace(/\/$/, '');
+    const base = (c.env.DASHBOARD_BASE_URL || 'https://creds.im').replace(/\/$/, '');
     let session;
     try {
         session = await stripe(c.env, 'POST', '/billing_portal/sessions', {

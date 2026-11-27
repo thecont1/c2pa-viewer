@@ -1,6 +1,6 @@
 # c2pa-verify (TypeScript)
 
-Thin zero-dependency client for the [C2PA Verify API](https://c2pa.thecontrarian.in/docs). Works in Node 18+, Bun, Deno, and edge workers — plain `fetch` throughout.
+Thin zero-dependency client for the [C2PA Verify API](https://creds.im/docs). Works in Node 18+, Bun, Deno, and edge workers — plain `fetch` throughout.
 
 ```ts
 import { C2paClient } from 'c2pa-verify';

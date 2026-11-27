@@ -8,7 +8,7 @@ info:
   description: |
     Public API for verifying C2PA Content Credentials on image assets.
 
-    **Host is a placeholder.** `https://api.c2pa.thecontrarian.in` is reserved for
+    **Host is a placeholder.** `https://api.creds.im` is reserved for
     the production deployment; until then treat every path as relative to this
     server's `/v1` base.
 
@@ -25,7 +25,7 @@ tags:
   - name: trust
     description: Active trust-list provenance.
 servers:
-  - url: https://api.c2pa.thecontrarian.in/v1
+  - url: https://api.creds.im/v1
     description: Production (placeholder host)
 security:
   - bearerAuth: []
@@ -448,7 +448,7 @@ paths:
                     trust:
                       state: Valid
                       basis: none
-                    more: https://c2pa.thecontrarian.in/?uri=https%3A%2F%2Fexample.com%2Fphoto.jpg
+                    more: https://creds.im/?uri=https%3A%2F%2Fexample.com%2Fphoto.jpg
                 unverified:
                   value:
                     creator: null
@@ -459,7 +459,7 @@ paths:
                     trust:
                       state: null
                       basis: null
-                    more: https://c2pa.thecontrarian.in/?uri=https%3A%2F%2Fexample.com%2Fplain.jpg
+                    more: https://creds.im/?uri=https%3A%2F%2Fexample.com%2Fplain.jpg
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -547,7 +547,7 @@ paths:
                 job_id: job_01JZX4K8Q2MNBVCXZ
                 status: awaiting_upload
                 upload:
-                  url: https://uploads.c2pa.thecontrarian.in/job_01JZX4K8Q2MNBVCXZ
+                  url: https://uploads.creds.im/job_01JZX4K8Q2MNBVCXZ
                   method: PUT
                   headers:
                     content-type: image/jpeg
@@ -605,7 +605,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
               example:
-                type: https://api.c2pa.thecontrarian.in/problems/job_not_found
+                type: https://api.creds.im/problems/job_not_found
                 title: Job not found
                 status: 404
                 code: job_not_found
@@ -1028,7 +1028,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://api.c2pa.thecontrarian.in/problems/unauthorized
+            type: https://api.creds.im/problems/unauthorized
             title: Unauthorized
             status: 401
             code: unauthorized
@@ -1038,7 +1038,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://api.c2pa.thecontrarian.in/problems/forbidden
+            type: https://api.creds.im/problems/forbidden
             title: Forbidden
             status: 403
             code: forbidden
@@ -1058,7 +1058,7 @@ components:
                     type: string
                     description: Suggested alternative.
           example:
-            type: https://api.c2pa.thecontrarian.in/problems/payload_too_large
+            type: https://api.creds.im/problems/payload_too_large
             title: Payload Too Large
             status: 413
             code: payload_too_large
@@ -1070,7 +1070,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://api.c2pa.thecontrarian.in/problems/unsupported_media_type
+            type: https://api.creds.im/problems/unsupported_media_type
             title: Unsupported Media Type
             status: 415
             code: unsupported_media_type
@@ -1080,7 +1080,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://api.c2pa.thecontrarian.in/problems/invalid_request
+            type: https://api.creds.im/problems/invalid_request
             title: Unprocessable Entity
             status: 422
             code: invalid_request
@@ -1095,7 +1095,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://api.c2pa.thecontrarian.in/problems/rate_limited
+            type: https://api.creds.im/problems/rate_limited
             title: Too Many Requests
             status: 429
             code: rate_limited
@@ -1105,7 +1105,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://api.c2pa.thecontrarian.in/problems/upstream_fetch_failed
+            type: https://api.creds.im/problems/upstream_fetch_failed
             title: Upstream Fetch Failed
             status: 502
             code: upstream_fetch_failed
@@ -1115,7 +1115,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://api.c2pa.thecontrarian.in/problems/internal_error
+            type: https://api.creds.im/problems/internal_error
             title: Internal Server Error
             status: 500
             code: internal_error

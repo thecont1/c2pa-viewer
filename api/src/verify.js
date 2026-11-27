@@ -443,7 +443,7 @@ export async function verifyHandler(c) {
     return withRateHeaders(Response.json(result));
 }
 
-const VIEWER_BASE = 'https://c2pa.thecontrarian.in/';
+const VIEWER_BASE = 'https://creds.im/';
 
 export async function miniHandler(c) {
     const sourceUrl = c.req.query('url');

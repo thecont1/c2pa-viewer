@@ -68,7 +68,7 @@ Implemented and verified locally (branch `feat/api-phase0`):
 - url input fetches server-side with shared SSRF guard, manual redirect loop (max 5 hops, re-checked per hop), 30s timeout, 20 MiB streaming cap. DNS-rebinding is NOT defended (no resolver primitive in workerd) — documented limitation; risk is low because Workers egress cannot reach private IPs anyway, the guard is defense-in-depth.
 - Load test (`docs/loadtest-results.json`): 180/180 requests zero failures locally. C.jpg p50 35ms sequential; concurrency scales linearly-ish (25-way p95 ~1.09s on a 10-core workstation); pad-15MiB p50 108ms. **RSS never recovers after load** — confirms the P0 ratchet; recycling isolates stays on the Phase 1 remainder list.
 - CI authored (.github/workflows ci.yml + deploy.yml) but never run: needs the branch pushed, plus repo secrets CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID.
-- Viewer production redeployed (branch deploy `--branch main`): trust verification is now live at c2pa.thecontrarian.in; SSRF 403 regression, proxy 200, deep links verified.
+- Viewer production redeployed (branch deploy `--branch main`): trust verification is now live at creds.im; SSRF 403 regression, proxy 200, deep links verified.
 - **RESOLVED 2026-11-25**: interactive `wrangler login` restored OAuth. Real deployment live at `https://c2pa-verify-api.thecontrarian.workers.dev` with D1 `c2pa-verify-api` (id 0e4461c8-…). Production measurement (`docs/loadtest-results.json` under `deployed`): **no 1102 CPU errors at any size** — small files p~0.2-0.8s, 19 MiB at-cap ~2s, all 200; 25/30/35 MiB correctly 413 with spec-shaped body. The 10ms-Free-plan fear is empirically dead for this account. Usage metering verified in production (13 metered, rejections unmetered). One active scale-tier measurement key exists (plaintext in agent /tmp only); revoke via `bun scripts/keyctl.mjs list --remote` + `revoke --id … --remote` when no longer needed.
 
 ## Phase 2: MCP
@@ -165,6 +165,6 @@ Milestones:
 
 ## Open decisions
 
-- ~~API hostname~~ decided: `api.c2pa.thecontrarian.in` (live since 2026-11-26)
+- ~~API hostname~~ decided: `api.creds.im` (live since 2026-11-26)
 - ~~Container engine~~ decided: native Rust — full rewrite of the container analysis pipeline in Rust (user decision 2026-11-26, aware that c2pa-node is already Rust-native underneath and that this forks the single-source parity guarantee; implementation tracked below)
 - ~~Sync size cap~~ decided: 20 MiB (see Phase 0 findings)

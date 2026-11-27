@@ -8,6 +8,10 @@
   // account (the Pages viewer already uses c2pa.thecontrarian.in).
   "routes": [
     {
+      "pattern": "api.creds.im",
+      "custom_domain": true
+    },
+    {
       "pattern": "api.c2pa.thecontrarian.in",
       "custom_domain": true
     }

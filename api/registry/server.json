@@ -6,11 +6,11 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://api.c2pa.thecontrarian.in/mcp",
+      "url": "https://api.creds.im/mcp",
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key (c2pa_live_... or c2pa_test_...), see https://c2pa.thecontrarian.in",
+          "description": "Bearer API key (c2pa_live_... or c2pa_test_...), see https://creds.im",
           "isRequired": true,
           "isSecret": true
         }

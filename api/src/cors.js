@@ -66,7 +66,9 @@ export async function corsMw(c, next) {
 // Extend or override with DASHBOARD_ORIGINS (comma-separated; a trailing *
 // entry such as https://*.example.com suffix-matches the host).
 const DASHBOARD_ORIGINS_DEFAULT = [
-    'https://c2pa.thecontrarian.in',
+    'https://creds.im',
+    'https://www.creds.im',
+    'https://creds.im',
     'http://localhost:8788',
     'http://127.0.0.1:8788',
 ];
