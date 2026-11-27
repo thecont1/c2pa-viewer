@@ -24,7 +24,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const API_DIR = join(ROOT, 'api');
 const WRANGLER = join(ROOT, 'node_modules/.bin/wrangler');
-const BASE = (process.env.C2PA_API_BASE || 'https://api.c2pa.thecontrarian.in').replace(/\/$/, '');
+const BASE = (process.env.C2PA_API_BASE || 'https://c2pa.creds.im').replace(/\/$/, '');
 const BUCKET = 'c2pa-verify-jobs';
 // The large fixture is served from a DEDICATED bucket whose only contents are
 // test artifacts. Enabling r2.dev on the production jobs bucket (the old flow)

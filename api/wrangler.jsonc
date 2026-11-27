@@ -3,9 +3,7 @@
   "name": "c2pa-verify-api",
   "main": "src/index.js",
   "compatibility_date": "2026-11-24",
-  // Custom domain for the public API. The workers.dev route stays enabled as
-  // a fallback during the transition; the zone thecontrarian.in is in this
-  // account. On c2pa.creds.im the worker owns only /v1/* and /mcp* — path-scoped
+  // On c2pa.creds.im the worker owns only /v1/* and /mcp* — path-scoped
   // zone routes, since a custom_domain would shadow the Pages viewer on the
   // whole host; all other paths fall through to Pages.
   "routes": [
@@ -16,10 +14,6 @@
     {
       "pattern": "c2pa.creds.im/mcp*",
       "zone_name": "creds.im"
-    },
-    {
-      "pattern": "api.c2pa.thecontrarian.in",
-      "custom_domain": true
     }
   ],
   // Keep the workers.dev route alive during the hostname transition — existing
