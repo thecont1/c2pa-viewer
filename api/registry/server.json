@@ -6,7 +6,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://api.c2pa.creds.im/mcp",
+      "url": "https://c2pa.creds.im/mcp",
       "headers": [
         {
           "name": "Authorization",

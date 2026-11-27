@@ -5,11 +5,15 @@
   "compatibility_date": "2026-11-24",
   // Custom domain for the public API. The workers.dev route stays enabled as
   // a fallback during the transition; the zone thecontrarian.in is in this
-  // account (the Pages viewer already uses c2pa.thecontrarian.in).
+  // account. On c2pa.creds.im the worker owns only /v1/* and /mcp* — path-scoped
+  // zone routes, since a custom_domain would shadow the Pages viewer on the
+  // whole host; all other paths fall through to Pages.
   "routes": [
     {
-      "pattern": "api.c2pa.creds.im",
-      "custom_domain": true
+      "pattern": "c2pa.creds.im/v1/*"
+    },
+    {
+      "pattern": "c2pa.creds.im/mcp*"
     },
     {
       "pattern": "api.c2pa.thecontrarian.in",

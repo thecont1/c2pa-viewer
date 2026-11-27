@@ -1,7 +1,7 @@
 // API Dashboard — key-authenticated self-service for the c2pa-verify API.
 // No account layer: the API key IS the credential, stored in localStorage.
 
-const API = 'https://api.c2pa.creds.im';
+const API = 'https://c2pa.creds.im';
 // Cloudflare Turnstile sitekey — production widget 'c2pa-verify-dashboard'
 // (managed mode, domains: creds.im + pages.dev previews + localhost).
 const TURNSTILE_SITEKEY = '0x4AAAAAAGTefC4DoXlf2sZ7';

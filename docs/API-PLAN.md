@@ -165,6 +165,6 @@ Milestones:
 
 ## Open decisions
 
-- ~~API hostname~~ decided: `api.c2pa.creds.im` (live since 2026-11-26)
+- ~~API hostname~~ decided: `c2pa.creds.im` (live since 2026-11-26)
 - ~~Container engine~~ decided: native Rust — full rewrite of the container analysis pipeline in Rust (user decision 2026-11-26, aware that c2pa-node is already Rust-native underneath and that this forks the single-source parity guarantee; implementation tracked below)
 - ~~Sync size cap~~ decided: 20 MiB (see Phase 0 findings)

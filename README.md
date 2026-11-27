@@ -27,7 +27,7 @@ drop a file or paste a link and instantly see:
 ## For developers: the verification API
 
 The same engine is available as a commercial API
-(`api.c2pa.creds.im`) so your own software can verify images
+(`c2pa.creds.im`) so your own software can verify images
 automatically — with TypeScript and Python SDKs, plus an MCP server so AI
 agents can verify images natively. It works in two modes:
 

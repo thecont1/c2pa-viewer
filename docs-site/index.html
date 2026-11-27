@@ -71,15 +71,15 @@ table.docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; m
 <main class="docs-content">
 <h1>C2PA Verify API</h1>
 <p>Verify content authenticity programmatically: C2PA manifest validation, trust-chain verification against the official trust lists, provenance extraction, and nutritional-label metadata — as a synchronous API, an asynchronous job pipeline for large assets, or an MCP server for AI agents.</p>
-<p><strong>Base URL:</strong> <code>https://api.c2pa.creds.im</code> &nbsp;·&nbsp; <strong>OpenAPI 3.1:</strong> <code>GET /v1/openapi.json</code></p>
+<p><strong>Base URL:</strong> <code>https://c2pa.creds.im</code> &nbsp;·&nbsp; <strong>OpenAPI 3.1:</strong> <code>GET /v1/openapi.json</code></p>
 
 <h2 id="quickstart">Quickstart</h2>
 <p>1. Get a free key at the <a href="/dashboard">dashboard</a> (500 verifications/month, no card required) or programmatically:</p>
-<pre><code>curl -X POST https://api.c2pa.creds.im/v1/signup/free \
+<pre><code>curl -X POST https://c2pa.creds.im/v1/signup/free \
   -H 'content-type: application/json' \
   -d '{"turnstile_token": "&lt;token from the Turnstile widget&gt;"}'</code></pre>
 <p>2. Verify an image:</p>
-<pre><code>curl -X POST https://api.c2pa.creds.im/v1/verify \
+<pre><code>curl -X POST https://c2pa.creds.im/v1/verify \
   -H "authorization: Bearer c2pa_live_…" \
   -H 'content-type: application/json' \
   -d '{"url": "https://example.com/photo.jpg"}'</code></pre>
@@ -113,7 +113,7 @@ table.docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; m
 <li><strong>multipart/form-data</strong>: a <code>file</code> field</li>
 </ul>
 <p>Query parameters: <code>include</code> (sections: <code>exif,iptc,gps,thumbnails,raw_manifest</code>; default <code>exif,iptc</code>), <code>trust</code> (<code>c2pa</code> or <code>c2pa_and_itl</code>, default the latter), <code>strip_gps</code> (default true).</p>
-<p>The response is the full <code>VerifyResult</code> — validation state, trust basis, active manifest, claim generator, signer chain, provenance rows, EXIF/IPTC sections, thumbnails, and the asset digest. See the schemas in <a href="https://api.c2pa.creds.im/v1/openapi.json">the OpenAPI document</a>.</p>
+<p>The response is the full <code>VerifyResult</code> — validation state, trust basis, active manifest, claim generator, signer chain, provenance rows, EXIF/IPTC sections, thumbnails, and the asset digest. See the schemas in <a href="https://c2pa.creds.im/v1/openapi.json">the OpenAPI document</a>.</p>
 <p><span class="method method-get">GET</span><span class="endpoint">/v1/verify/mini?url=…</span> — compact trust card (the same payload the viewer's nutritional label uses).</p>
 <div class="callout">Need results for files that take a while to fetch, or webhook delivery instead of polling? Use async jobs — assets up to 20 MiB by default; larger caps are negotiated per key (contact the operator).</div>
 
@@ -124,7 +124,7 @@ table.docs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; m
 <li><strong>URL job</strong>: <code>{"url": "https://…", "filename": "x.jpg"}</code> — accepted instantly, fetched server-side</li>
 <li><strong>Direct upload</strong>: omit <code>url</code> — the response is <code>awaiting_upload</code> with a presigned PUT session; upload the bytes, R2 notifies the pipeline automatically</li>
 </ul>
-<pre><code>curl -X POST https://api.c2pa.creds.im/v1/jobs \
+<pre><code>curl -X POST https://c2pa.creds.im/v1/jobs \
   -H "authorization: Bearer c2pa_live_…" -H 'content-type: application/json' \
   -H 'Idempotency-Key: order-4173' \
   -d '{"url": "https://example.com/big.jpg", "filename": "big.jpg",
