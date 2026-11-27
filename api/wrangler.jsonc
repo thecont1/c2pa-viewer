@@ -10,10 +10,12 @@
   // whole host; all other paths fall through to Pages.
   "routes": [
     {
-      "pattern": "c2pa.creds.im/v1/*"
+      "pattern": "c2pa.creds.im/v1/*",
+      "zone_name": "creds.im"
     },
     {
-      "pattern": "c2pa.creds.im/mcp*"
+      "pattern": "c2pa.creds.im/mcp*",
+      "zone_name": "creds.im"
     },
     {
       "pattern": "api.c2pa.thecontrarian.in",
